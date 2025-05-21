@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime, timedelta
+from scipy import stats
 
 def get_financial_metrics(ticker_symbol):
     """Fetch financial metrics for a given ticker."""
@@ -101,7 +102,7 @@ def get_financial_metrics(ticker_symbol):
         if fcf_sum != 0 and pd.notna(current_total_assets) and current_total_assets != 0:
             fcf_sum_to_assets = fcf_sum / current_total_assets
         
-        # 4. Eight-year gross margin growth (geometric average)
+        # 4. Eight-year gross margin growth (geometric average) and Margin Stability
         gross_margins = []
         
         for i in range(years):
@@ -112,6 +113,15 @@ def get_financial_metrics(ticker_symbol):
                 
                 if pd.notna(gross_profit) and pd.notna(total_revenue) and total_revenue != 0:
                     gross_margins.append(gross_profit / total_revenue)
+        
+        # Calculate Margin Stability (MS) = Average Gross Margin / Standard Deviation of Gross Margin
+        margin_stability = None
+        if len(gross_margins) >= 3:  # Need at least 3 years to calculate a meaningful std dev
+            avg_gross_margin = np.mean(gross_margins)
+            std_gross_margin = np.std(gross_margins, ddof=1)  # Use sample standard deviation
+            
+            if std_gross_margin > 0:  # Avoid division by zero
+                margin_stability = avg_gross_margin / std_gross_margin
         
         gross_margin_growth = None
         if len(gross_margins) > 1:
@@ -129,14 +139,18 @@ def get_financial_metrics(ticker_symbol):
                 # Calculate geometric mean of growth rates
                 growth_rates_for_calc = [(1 + r) for r in growth_rates]
                 gross_margin_growth = np.prod(np.array(growth_rates_for_calc)) ** (1 / len(growth_rates)) - 1
+                
+        # Add debug info for gross margins and margin stability
+        print(f"- Gross Margins: {gross_margins}")
+        print(f"- Margin Stability: {margin_stability}")
         
         # Add debug info for this ticker
-        #print(f"Debug for {ticker_symbol}:")
-        #print(f"- ROA values: {roa_values}")
-       # print(f"- ROC values: {roc_values}")
-        #print(f"- Eight-Year ROA: {eight_year_roa}")
-        #print(f"- Eight-Year ROC: {eight_year_roc}")
-        #print("-------------------")
+        print(f"Debug for {ticker_symbol}:")
+        print(f"- ROA values: {roa_values}")
+        print(f"- ROC values: {roc_values}")
+        print(f"- Eight-Year ROA: {eight_year_roa}")
+        print(f"- Eight-Year ROC: {eight_year_roc}")
+        print("-------------------")
         
         return {
             'Ticker': ticker_symbol,
@@ -147,8 +161,9 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_ROC': eight_year_roc,
             'FCF_Sum_to_Assets': fcf_sum_to_assets,
             'Eight_Year_Gross_Margin_Growth': gross_margin_growth,
-            'Years_Data_Available': years
-    }
+            'Margin_Stability': margin_stability,
+            'Years_Data_Available': years,
+        }
     
     except Exception as e:
         print(f"Error getting data for {ticker_symbol}: {e}")
@@ -161,12 +176,9 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_ROC': None,
             'FCF_Sum_to_Assets': None,
             'Eight_Year_Gross_Margin_Growth': None,
+            'Margin_Stability': None,
             'Years_Data_Available': 0,
-            'ROA_Data_Points': 0,
-            'ROC_Data_Points': 0
         }
-
-
 
 # Main function to process all tickers
 def process_all_tickers(tickers):
@@ -184,6 +196,80 @@ def process_all_tickers(tickers):
     # Convert results to DataFrame
     results_df = pd.DataFrame(results)
     
+    # Define metrics that need percentile calculation
+    metrics_for_percentile = [
+        'OperatingIncome_EV_Ratio',  # Higher is better
+        'Eight_Year_ROA',            # Higher is better
+        'Eight_Year_ROC',            # Higher is better
+        'FCF_Sum_to_Assets',         # Higher is better
+        'Eight_Year_Gross_Margin_Growth',  # Higher is better
+        'Margin_Stability'           # Higher is better
+    ]
+    
+    # Calculate percentiles for each metric
+    for metric in metrics_for_percentile:
+        # Drop rows with NaN values for the current metric
+        df_filtered = results_df.dropna(subset=[metric])
+        
+        if not df_filtered.empty:
+            # Calculate percentile for each ticker
+            metric_values = df_filtered[metric].values
+            
+            # For metrics where higher is better
+            metric_percentiles = [stats.percentileofscore(metric_values, x) / 100 for x in metric_values]
+            
+            # Create a mapping from ticker to percentile
+            ticker_to_percentile = dict(zip(df_filtered['Ticker'].values, metric_percentiles))
+            
+            # Add percentiles to the original dataframe
+            results_df[f'{metric}_Percentile'] = results_df['Ticker'].map(ticker_to_percentile)
+        else:
+            # If no valid values, create an empty column
+            results_df[f'{metric}_Percentile'] = None
+    
+    # Calculate Max Percentile between Margin Stability and Margin Growth
+    # First ensure both percentile columns exist
+    margin_stability_col = 'Margin_Stability_Percentile'
+    margin_growth_col = 'Eight_Year_Gross_Margin_Growth_Percentile'
+    
+    if margin_stability_col in results_df.columns and margin_growth_col in results_df.columns:
+        # Calculate the maximum percentile between the two
+        results_df['Max_Margin_Metric_Percentile'] = results_df[[margin_stability_col, margin_growth_col]].max(axis=1)
+        
+        # Add information about which metric contributed to the max value
+        def determine_max_source(row):
+            if pd.isna(row[margin_stability_col]) and pd.isna(row[margin_growth_col]):
+                return 'Neither'
+            elif pd.isna(row[margin_stability_col]):
+                return 'Growth'
+            elif pd.isna(row[margin_growth_col]):
+                return 'Stability'
+            else:
+                return 'Growth' if row[margin_growth_col] >= row[margin_stability_col] else 'Stability'
+        
+        results_df['Max_Margin_Source'] = results_df.apply(determine_max_source, axis=1)
+        
+        print("Added Max Margin Metric calculation")
+    else:
+        print("Warning: One or both margin percentile columns not found")
+    
+    # Calculate Franchise Power Percentile
+    # This is the average of ROA percentile, ROC Percentile, Sum cash flow percentile, Max_Margin_Metric_Percentile
+    franchise_power_columns = [
+        'Eight_Year_ROA_Percentile',
+        'Eight_Year_ROC_Percentile',
+        'FCF_Sum_to_Assets_Percentile',
+        'Max_Margin_Metric_Percentile'
+    ]
+    
+    # Create a function to calculate average of available percentiles
+    def calculate_franchise_power(row):
+        values = [row[col] for col in franchise_power_columns if pd.notna(row[col])]
+        return np.mean(values) if values else None
+    
+    # Apply the function to calculate Franchise Power Percentile
+    results_df['Franchise_Power_Percentile'] = results_df.apply(calculate_franchise_power, axis=1)
+    
     # Display the results
     print(results_df.head())
     
@@ -192,51 +278,115 @@ def process_all_tickers(tickers):
     
     return results_df
 
-# List of tickers from your original code
-tickers = [
-    "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
-    "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
-    "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
-    "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
-    "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
-     "BAK", "BB", "BHP","BRK-B",
-    "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
-    "BP", "BRFS", "BRK-B", "CAAP", "CAH",
-     "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
-     "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
-    "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
-    "E", "EA", "EBAY", "EBR","EFX", "EQNR", "ERIC",
-    "ERJ", "ETSY", "F", "FCX", "FDX",
-    "FMX", "FSLR", "GE", "GFI", "GGB", "GILD",
-    "GLOB", "GLW", "GM", "GOOGL", "GRMN",
-    "GSK", "GT", "HAL", "HAPV3.SA", "HD", "HL", "HMC", "HMY",
-    "HOG", "HON", "HPQ", "HSY", "HUT", "HWM",
-     "IBM", "INFY", "INTC", "IP",
-    "ISRG","JBSS3.SA",
-    "JD", "JMIA", "JNJ","JOYY", "KEP", "KGC",
-    "KMB", "KO", "KOD", "LAC", "LAR", "LLY",
-    "LMT", "LND", "LRCX", "LREN3.SA", "LVS",  "MA", "MCD",
-     "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
-    "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
-    "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
-    "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
-    "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
-    "PBR", "PCAR", "PEP", "PFE", "PG",
-    "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
-     "RACE", "RBLX", "RENT3.SA", "RIO", "RIOT", "ROKU", "ROST", "RTX",
-     "SAP", "SATL", "SBS", "SBUX", "SCCO", "SDA", "SE",
-    "SHEL", "SHOP", "SID", "SLB", "SNA", "SNAP", "SNOW", "SONY", "SPCE",
-    "SPGI", "SPOT", "STLA", "STNE", "SYY", "T",
-    "TCOM", "TEN", "TGT", "TIMB", "TM",
-    "TMO", "TMUS", "TRIP", "TSLA", "TSM", "TTE", "TV", "TWLO",
-    "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
-     "UNP", "URBN", "V", "VALE",
-      "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
-    "XYZ", "YELP", "ZM"
-]
-test = ["AAPL", "GOOG", "MSFT"]
-# Uncomment the line below to run on a small sample first
+# Add a function to calculate composite scores
+def calculate_composite_score(results_df, weights=None):
+    """
+    Calculate a composite score based on percentiles of various metrics
+    
+    Parameters:
+    - results_df: DataFrame with financial metrics and their percentiles
+    - weights: Dictionary mapping metric percentile names to their weights in the composite score
+              If None, equal weights will be used for all metrics
+    
+    Returns:
+    - Updated DataFrame with a composite score column
+    """
+    # Get all percentile columns
+    percentile_cols = [col for col in results_df.columns if col.endswith('_Percentile')]
+    
+    if not percentile_cols:
+        print("No percentile columns found!")
+        return results_df
+    
+    # If no weights provided, use equal weights
+    if weights is None:
+        weights = {col: 1.0/len(percentile_cols) for col in percentile_cols}
+    
+    # Validate weights
+    for col in percentile_cols:
+        if col not in weights:
+            print(f"Warning: No weight provided for {col}, using 0")
+            weights[col] = 0
+    
+    # Calculate weighted average of percentiles
+    results_df['Composite_Score'] = 0
+    
+    for col in percentile_cols:
+        # Only use rows where this metric is not NaN
+        mask = results_df[col].notna()
+        results_df.loc[mask, 'Composite_Score'] += results_df.loc[mask, col] * weights[col]
+    
+    # Count how many metrics were used for each row
+    results_df['Metrics_Used'] = results_df[percentile_cols].count(axis=1)
+    
+    # Normalize the composite score based on how many metrics were used
+    # This ensures that stocks with missing metrics aren't unduly penalized
+    denominator = 0
+    for col in percentile_cols:
+        denominator += weights[col]
+    
+    # Calculate the expected sum of weights if all metrics were present
+    total_weight = sum(weights.values())
+    
+    # Adjust composite score by the ratio of actual weights used to total possible weights
+    # Only adjust if metrics are missing and the denominator is not zero
+    if denominator > 0:
+        results_df['Composite_Score'] = results_df['Composite_Score'] * (total_weight / denominator)
+    
+    # Sort by composite score (descending)
+    results_df_sorted = results_df.sort_values('Composite_Score', ascending=False)
+    
+    return results_df_sorted
 
-
-# Uncomment the line below to run on all tickers
-final_df = process_all_tickers(test)
+# Example usage
+if __name__ == "__main__":
+    # Full list of tickers as in original code
+    tickers = [
+        "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
+        "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
+        "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
+        "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
+        "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
+         "BAK", "BB", "BHP","BRK-B",
+        "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
+        "BP", "BRFS", "BRK-B", "CAAP", "CAH",
+         "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
+         "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
+        "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
+        "E", "EA", "EBAY", "EBR","EFX", "EQNR", "ERIC",
+        "ERJ", "ETSY", "F", "FCX", "FDX",
+        "FMX", "FSLR", "GE", "GFI", "GGB", "GILD",
+        "GLOB", "GLW", "GM", "GOOGL", "GRMN",
+        "GSK", "GT", "HAL", "HAPV3.SA", "HD", "HL", "HMC", "HMY",
+        "HOG", "HON", "HPQ", "HSY", "HUT", "HWM",
+         "IBM", "INFY", "INTC", "IP",
+        "ISRG","JBSS3.SA",
+        "JD", "JMIA", "JNJ","JOYY", "KEP", "KGC",
+        "KMB", "KO", "KOD", "LAC", "LAR", "LLY",
+        "LMT", "LND", "LRCX", "LREN3.SA", "LVS",  "MA", "MCD",
+         "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
+        "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
+        "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
+        "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
+        "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
+        "PBR", "PCAR", "PEP", "PFE", "PG",
+        "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
+         "RACE", "RBLX", "RENT3.SA", "RIO", "RIOT", "ROKU", "ROST", "RTX",
+         "SAP", "SATL", "SBS", "SBUX", "SCCO", "SDA", "SE",
+        "SHEL", "SHOP", "SID", "SLB", "SNA", "SNAP", "SNOW", "SONY", "SPCE",
+        "SPGI", "SPOT", "STLA", "STNE", "SYY", "T",
+        "TCOM", "TEN", "TGT", "TIMB", "TM",
+        "TMO", "TMUS", "TRIP", "TSLA", "TSM", "TTE", "TV", "TWLO",
+        "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
+         "UNP", "URBN", "V", "VALE",
+          "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
+        "XYZ", "YELP", "ZM"
+    ]
+    
+    # For testing, you can use a smaller subset
+    test_tickers = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "META", "NFLX", "NVDA"]
+    
+    # Process the tickers - use full list or test list as needed
+    # Uncomment the line you want to use
+    process_all_tickers(test_tickers)  # Use test list for testing
+    # process_all_tickers(tickers)  # Use full list for final analysis
