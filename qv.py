@@ -22,6 +22,11 @@ def get_financial_metrics(ticker_symbol):
         balance_annual = ticker.get_balance_sheet(freq="yearly")
         cashflow_annual = ticker.get_cashflow(freq="yearly")
         
+        # Get quarterly data for more current metrics
+        income_quarterly = ticker.get_income_stmt(freq="quarterly")
+        balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
+        cashflow_quarterly = ticker.get_cashflow(freq="quarterly")
+        
         # Get info dictionary for Enterprise Value
         info = ticker.info
         
@@ -139,6 +144,102 @@ def get_financial_metrics(ticker_symbol):
                 # Calculate geometric mean of growth rates
                 growth_rates_for_calc = [(1 + r) for r in growth_rates]
                 gross_margin_growth = np.prod(np.array(growth_rates_for_calc)) ** (1 / len(growth_rates)) - 1
+        
+        # REVISED APPROACH: Proper TTM calculation using quarterly data
+        # NEW METRIC 1: Current ROA = Net income TTM / total assets (t)
+        current_roa = None
+        fs_roa = 0  # Default to 0
+        
+        # Try to use quarterly data first for TTM calculation
+        if len(income_quarterly.columns) >= 4 and len(balance_quarterly.columns) > 0:
+            # Get the 4 most recent quarters
+            recent_quarters = income_quarterly.columns[:4]
+            
+            # Sum net income from the last 4 quarters
+            ttm_net_income = 0
+            for quarter in recent_quarters:
+                if "NetIncome" in income_quarterly.index:
+                    quarter_net_income = income_quarterly.loc["NetIncome"][quarter]
+                    if pd.notna(quarter_net_income):
+                        ttm_net_income += quarter_net_income
+            
+            # Get most recent total assets
+            most_recent_quarter = balance_quarterly.columns[0]  # Most recent quarter with balance sheet
+            total_assets_current = balance_quarterly.loc["TotalAssets"][most_recent_quarter] if "TotalAssets" in balance_quarterly.index else None
+            
+            # Calculate current ROA using TTM Net Income
+            if pd.notna(ttm_net_income) and pd.notna(total_assets_current) and total_assets_current != 0:
+                current_roa = ttm_net_income / total_assets_current
+                fs_roa = 1 if current_roa > 0 else 0
+        
+        # Fall back to annual data if insufficient quarterly data is available
+        if current_roa is None and len(income_annual.columns) > 0 and len(balance_annual.columns) > 0:
+            most_recent_year = income_annual.columns[0]  # Most recent year
+            
+            # Get net income for most recent year
+            net_income_current = income_annual.loc["NetIncome"][most_recent_year] if "NetIncome" in income_annual.index else None
+            
+            # Get total assets for most recent year
+            if most_recent_year in balance_annual.columns:
+                total_assets_current = balance_annual.loc["TotalAssets"][most_recent_year] if "TotalAssets" in balance_annual.index else None
+                
+                # Calculate current ROA
+                if pd.notna(net_income_current) and pd.notna(total_assets_current) and total_assets_current != 0:
+                    current_roa = net_income_current / total_assets_current
+                    fs_roa = 1 if current_roa > 0 else 0
+        
+        # NEW METRIC 2: Current FCFTA = free cash flow TTM / total assets (t)
+        current_fcfta = None
+        fs_fcfta = 0  # Default to 0
+        
+        # Try to use quarterly data first for TTM calculation
+        if len(cashflow_quarterly.columns) >= 4 and len(balance_quarterly.columns) > 0:
+            # Get the 4 most recent quarters
+            recent_quarters = cashflow_quarterly.columns[:4]
+            
+            # Sum free cash flow from the last 4 quarters
+            ttm_fcf = 0
+            for quarter in recent_quarters:
+                if "FreeCashFlow" in cashflow_quarterly.index:
+                    quarter_fcf = cashflow_quarterly.loc["FreeCashFlow"][quarter]
+                    if pd.notna(quarter_fcf):
+                        ttm_fcf += quarter_fcf
+            
+            # Get most recent total assets
+            most_recent_quarter = balance_quarterly.columns[0]  # Most recent quarter with balance sheet
+            total_assets_current = balance_quarterly.loc["TotalAssets"][most_recent_quarter] if "TotalAssets" in balance_quarterly.index else None
+            
+            # Calculate current FCFTA using TTM Free Cash Flow
+            if pd.notna(ttm_fcf) and pd.notna(total_assets_current) and total_assets_current != 0:
+                current_fcfta = ttm_fcf / total_assets_current
+                fs_fcfta = 1 if current_fcfta > 0 else 0
+        
+        # Fall back to annual data if insufficient quarterly data is available
+        if current_fcfta is None and len(cashflow_annual.columns) > 0 and len(balance_annual.columns) > 0:
+            most_recent_year = cashflow_annual.columns[0]  # Most recent year
+            
+            # Get free cash flow for most recent year
+            fcf_current = cashflow_annual.loc["FreeCashFlow"][most_recent_year] if "FreeCashFlow" in cashflow_annual.index else None
+            
+            # Get total assets for most recent year
+            if most_recent_year in balance_annual.columns:
+                total_assets_current = balance_annual.loc["TotalAssets"][most_recent_year] if "TotalAssets" in balance_annual.index else None
+            else:
+                # If years don't align perfectly, use the most recent total assets
+                total_assets_current = balance_annual.loc["TotalAssets"].iloc[0] if "TotalAssets" in balance_annual.index else None
+            
+            # Calculate current FCFTA
+            if pd.notna(fcf_current) and pd.notna(total_assets_current) and total_assets_current != 0:
+                current_fcfta = fcf_current / total_assets_current
+                fs_fcfta = 1 if current_fcfta > 0 else 0
+        
+        # NEW METRIC 3: ACCRUAL = FCFTA - ROA
+        accrual = None
+        fs_accrual = 0  # Default to 0
+        
+        if pd.notna(current_fcfta) and pd.notna(current_roa):
+            accrual = current_fcfta - current_roa
+            fs_accrual = 1 if accrual > 0 else 0
                 
         # Add debug info for gross margins and margin stability
         print(f"- Gross Margins: {gross_margins}")
@@ -150,6 +251,10 @@ def get_financial_metrics(ticker_symbol):
         print(f"- ROC values: {roc_values}")
         print(f"- Eight-Year ROA: {eight_year_roa}")
         print(f"- Eight-Year ROC: {eight_year_roc}")
+        print(f"- Current ROA: {current_roa}, FS_ROA: {fs_roa}")
+        print(f"- Current FCFTA: {current_fcfta}, FS_FCFTA: {fs_fcfta}")
+        print(f"- ACCRUAL: {accrual}, FS_ACCRUAL: {fs_accrual}")
+        print(f"- Data source: {'Quarterly TTM' if len(income_quarterly.columns) >= 4 else 'Annual'}")
         print("-------------------")
         
         return {
@@ -163,6 +268,14 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_Gross_Margin_Growth': gross_margin_growth,
             'Margin_Stability': margin_stability,
             'Years_Data_Available': years,
+            # Revised metrics
+            'Current_ROA': current_roa,
+            'FS_ROA': fs_roa,
+            'Current_FCFTA': current_fcfta,
+            'FS_FCFTA': fs_fcfta,
+            'ACCRUAL': accrual,
+            'FS_ACCRUAL': fs_accrual,
+            'Data_Source': 'Quarterly TTM' if len(income_quarterly.columns) >= 4 else 'Annual',
         }
     
     except Exception as e:
@@ -178,6 +291,14 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_Gross_Margin_Growth': None,
             'Margin_Stability': None,
             'Years_Data_Available': 0,
+            # New metrics
+            'Current_ROA': None,
+            'FS_ROA': 0,
+            'Current_FCFTA': None,
+            'FS_FCFTA': 0,
+            'ACCRUAL': None,
+            'FS_ACCRUAL': 0,
+            'Data_Source': 'None',
         }
 
 # Main function to process all tickers
@@ -203,7 +324,10 @@ def process_all_tickers(tickers):
         'Eight_Year_ROC',            # Higher is better
         'FCF_Sum_to_Assets',         # Higher is better
         'Eight_Year_Gross_Margin_Growth',  # Higher is better
-        'Margin_Stability'           # Higher is better
+        'Margin_Stability',          # Higher is better
+        'Current_ROA',               # Higher is better
+        'Current_FCFTA',             # Higher is better
+        'ACCRUAL'                    # Higher is better
     ]
     
     # Calculate percentiles for each metric
