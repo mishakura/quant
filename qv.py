@@ -22,10 +22,8 @@ def get_financial_metrics(ticker_symbol):
         balance_annual = ticker.get_balance_sheet(freq="yearly")
         cashflow_annual = ticker.get_cashflow(freq="yearly")
         
-        # Get quarterly data for more current metrics
-        income_quarterly = ticker.get_income_stmt(freq="quarterly")
+        # Get quarterly balance sheet for LEVER and LIQUID calculations
         balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
-        cashflow_quarterly = ticker.get_cashflow(freq="quarterly")
         
         # Get info dictionary for Enterprise Value
         info = ticker.info
@@ -145,35 +143,11 @@ def get_financial_metrics(ticker_symbol):
                 growth_rates_for_calc = [(1 + r) for r in growth_rates]
                 gross_margin_growth = np.prod(np.array(growth_rates_for_calc)) ** (1 / len(growth_rates)) - 1
         
-        # REVISED APPROACH: Proper TTM calculation using quarterly data
-        # NEW METRIC 1: Current ROA = Net income TTM / total assets (t)
+        # NEW METRIC 1: Current ROA = Net income before extraordinary items (t) / total assets (t)
         current_roa = None
         fs_roa = 0  # Default to 0
         
-        # Try to use quarterly data first for TTM calculation
-        if len(income_quarterly.columns) >= 4 and len(balance_quarterly.columns) > 0:
-            # Get the 4 most recent quarters
-            recent_quarters = income_quarterly.columns[:4]
-            
-            # Sum net income from the last 4 quarters
-            ttm_net_income = 0
-            for quarter in recent_quarters:
-                if "NetIncome" in income_quarterly.index:
-                    quarter_net_income = income_quarterly.loc["NetIncome"][quarter]
-                    if pd.notna(quarter_net_income):
-                        ttm_net_income += quarter_net_income
-            
-            # Get most recent total assets
-            most_recent_quarter = balance_quarterly.columns[0]  # Most recent quarter with balance sheet
-            total_assets_current = balance_quarterly.loc["TotalAssets"][most_recent_quarter] if "TotalAssets" in balance_quarterly.index else None
-            
-            # Calculate current ROA using TTM Net Income
-            if pd.notna(ttm_net_income) and pd.notna(total_assets_current) and total_assets_current != 0:
-                current_roa = ttm_net_income / total_assets_current
-                fs_roa = 1 if current_roa > 0 else 0
-        
-        # Fall back to annual data if insufficient quarterly data is available
-        if current_roa is None and len(income_annual.columns) > 0 and len(balance_annual.columns) > 0:
+        if len(income_annual.columns) > 0 and len(balance_annual.columns) > 0:
             most_recent_year = income_annual.columns[0]  # Most recent year
             
             # Get net income for most recent year
@@ -186,42 +160,21 @@ def get_financial_metrics(ticker_symbol):
                 # Calculate current ROA
                 if pd.notna(net_income_current) and pd.notna(total_assets_current) and total_assets_current != 0:
                     current_roa = net_income_current / total_assets_current
+                    
+                    # Calculate FS_ROA
                     fs_roa = 1 if current_roa > 0 else 0
         
-        # NEW METRIC 2: Current FCFTA = free cash flow TTM / total assets (t)
+        # NEW METRIC 2: Current FCFTA = free cash flow (t) / total assets (t)
         current_fcfta = None
         fs_fcfta = 0  # Default to 0
         
-        # Try to use quarterly data first for TTM calculation
-        if len(cashflow_quarterly.columns) >= 4 and len(balance_quarterly.columns) > 0:
-            # Get the 4 most recent quarters
-            recent_quarters = cashflow_quarterly.columns[:4]
-            
-            # Sum free cash flow from the last 4 quarters
-            ttm_fcf = 0
-            for quarter in recent_quarters:
-                if "FreeCashFlow" in cashflow_quarterly.index:
-                    quarter_fcf = cashflow_quarterly.loc["FreeCashFlow"][quarter]
-                    if pd.notna(quarter_fcf):
-                        ttm_fcf += quarter_fcf
-            
-            # Get most recent total assets
-            most_recent_quarter = balance_quarterly.columns[0]  # Most recent quarter with balance sheet
-            total_assets_current = balance_quarterly.loc["TotalAssets"][most_recent_quarter] if "TotalAssets" in balance_quarterly.index else None
-            
-            # Calculate current FCFTA using TTM Free Cash Flow
-            if pd.notna(ttm_fcf) and pd.notna(total_assets_current) and total_assets_current != 0:
-                current_fcfta = ttm_fcf / total_assets_current
-                fs_fcfta = 1 if current_fcfta > 0 else 0
-        
-        # Fall back to annual data if insufficient quarterly data is available
-        if current_fcfta is None and len(cashflow_annual.columns) > 0 and len(balance_annual.columns) > 0:
+        if len(cashflow_annual.columns) > 0 and len(balance_annual.columns) > 0:
             most_recent_year = cashflow_annual.columns[0]  # Most recent year
             
             # Get free cash flow for most recent year
             fcf_current = cashflow_annual.loc["FreeCashFlow"][most_recent_year] if "FreeCashFlow" in cashflow_annual.index else None
             
-            # Get total assets for most recent year
+            # Get total assets for most recent year (ensure same year if possible)
             if most_recent_year in balance_annual.columns:
                 total_assets_current = balance_annual.loc["TotalAssets"][most_recent_year] if "TotalAssets" in balance_annual.index else None
             else:
@@ -231,6 +184,8 @@ def get_financial_metrics(ticker_symbol):
             # Calculate current FCFTA
             if pd.notna(fcf_current) and pd.notna(total_assets_current) and total_assets_current != 0:
                 current_fcfta = fcf_current / total_assets_current
+                
+                # Calculate FS_FCFTA
                 fs_fcfta = 1 if current_fcfta > 0 else 0
         
         # NEW METRIC 3: ACCRUAL = FCFTA - ROA
@@ -239,23 +194,73 @@ def get_financial_metrics(ticker_symbol):
         
         if pd.notna(current_fcfta) and pd.notna(current_roa):
             accrual = current_fcfta - current_roa
+            
+            # Calculate FS_ACCRUAL
             fs_accrual = 1 if accrual > 0 else 0
-                
-        # Add debug info for gross margins and margin stability
-        print(f"- Gross Margins: {gross_margins}")
-        print(f"- Margin Stability: {margin_stability}")
         
-        # Add debug info for this ticker
-        print(f"Debug for {ticker_symbol}:")
-        print(f"- ROA values: {roa_values}")
-        print(f"- ROC values: {roc_values}")
-        print(f"- Eight-Year ROA: {eight_year_roa}")
-        print(f"- Eight-Year ROC: {eight_year_roc}")
-        print(f"- Current ROA: {current_roa}, FS_ROA: {fs_roa}")
-        print(f"- Current FCFTA: {current_fcfta}, FS_FCFTA: {fs_fcfta}")
-        print(f"- ACCRUAL: {accrual}, FS_ACCRUAL: {fs_accrual}")
-        print(f"- Data source: {'Quarterly TTM' if len(income_quarterly.columns) >= 4 else 'Annual'}")
-        print("-------------------")
+        # NEW METRIC 4: LEVER = long-term debt (t − 1) / total assets (t − 1) − long-term debt (t) / total assets (t)
+        # Using quarterly data, where t is latest quarter and t-1 is same quarter from previous year
+        lever = None
+        fs_lever = 0  # Default to 0
+        
+        # Get quarterly balance sheet data
+        balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
+        
+        if len(balance_quarterly.columns) >= 4:  # Need at least 4 quarters of data to compare year-over-year
+            current_quarter = balance_quarterly.columns[0]  # Most recent quarter
+            year_ago_quarter = balance_quarterly.columns[4] if len(balance_quarterly.columns) >= 5 else balance_quarterly.columns[-1]  # Same quarter 1 year ago
+            
+            # Get long-term debt and total assets for current and previous year quarters
+            lt_debt_current = balance_quarterly.loc["LongTermDebt"][current_quarter] if "LongTermDebt" in balance_quarterly.index else None
+            total_assets_current = balance_quarterly.loc["TotalAssets"][current_quarter] if "TotalAssets" in balance_quarterly.index else None
+            
+            lt_debt_previous = balance_quarterly.loc["LongTermDebt"][year_ago_quarter] if "LongTermDebt" in balance_quarterly.index else None
+            total_assets_previous = balance_quarterly.loc["TotalAssets"][year_ago_quarter] if "TotalAssets" in balance_quarterly.index else None
+            
+            # Calculate LEVER
+            if (pd.notna(lt_debt_current) and pd.notna(total_assets_current) and 
+                pd.notna(lt_debt_previous) and pd.notna(total_assets_previous) and
+                total_assets_current > 0 and total_assets_previous > 0):
+                
+                lt_debt_to_assets_current = lt_debt_current / total_assets_current
+                lt_debt_to_assets_previous = lt_debt_previous / total_assets_previous
+                
+                lever = lt_debt_to_assets_previous - lt_debt_to_assets_current
+                
+                # Calculate FS_LEVER
+                fs_lever = 1 if lever > 0 else 0
+        
+        # NEW METRIC 5: LIQUID = current ratio (t) − current ratio (t − 1)
+        # Using quarterly data, where t is latest quarter and t-1 is same quarter from previous year
+        liquid = None
+        fs_liquid = 0  # Default to 0
+        
+        # Already fetched quarterly balance sheet above
+        if len(balance_quarterly.columns) >= 4:  # Need at least 4 quarters of data to compare year-over-year
+            current_quarter = balance_quarterly.columns[0]  # Most recent quarter
+            year_ago_quarter = balance_quarterly.columns[4] if len(balance_quarterly.columns) >= 5 else balance_quarterly.columns[-1]  # Same quarter 1 year ago
+            
+            # Get current assets and current liabilities for current quarter and year-ago quarter
+            current_assets_current = balance_quarterly.loc["CurrentAssets"][current_quarter] if "CurrentAssets" in balance_quarterly.index else None
+            current_liab_current = balance_quarterly.loc["CurrentLiabilities"][current_quarter] if "CurrentLiabilities" in balance_quarterly.index else None
+            
+            current_assets_previous = balance_quarterly.loc["CurrentAssets"][year_ago_quarter] if "CurrentAssets" in balance_quarterly.index else None
+            current_liab_previous = balance_quarterly.loc["CurrentLiabilities"][year_ago_quarter] if "CurrentLiabilities" in balance_quarterly.index else None
+            
+            # Calculate current ratios and LIQUID
+            if (pd.notna(current_assets_current) and pd.notna(current_liab_current) and 
+                pd.notna(current_assets_previous) and pd.notna(current_liab_previous) and
+                current_liab_current > 0 and current_liab_previous > 0):
+                
+                current_ratio_current = current_assets_current / current_liab_current
+                current_ratio_previous = current_assets_previous / current_liab_previous
+                
+                liquid = current_ratio_current - current_ratio_previous
+                
+                # Calculate FS_LIQUID
+                fs_liquid = 1 if liquid > 0 else 0
+        
+        # NEQISS metric removed as requested
         
         return {
             'Ticker': ticker_symbol,
@@ -268,14 +273,16 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_Gross_Margin_Growth': gross_margin_growth,
             'Margin_Stability': margin_stability,
             'Years_Data_Available': years,
-            # Revised metrics
             'Current_ROA': current_roa,
             'FS_ROA': fs_roa,
             'Current_FCFTA': current_fcfta,
             'FS_FCFTA': fs_fcfta,
             'ACCRUAL': accrual,
             'FS_ACCRUAL': fs_accrual,
-            'Data_Source': 'Quarterly TTM' if len(income_quarterly.columns) >= 4 else 'Annual',
+            'LEVER': lever,
+            'FS_LEVER': fs_lever,
+            'LIQUID': liquid,
+            'FS_LIQUID': fs_liquid,
         }
     
     except Exception as e:
@@ -291,14 +298,16 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_Gross_Margin_Growth': None,
             'Margin_Stability': None,
             'Years_Data_Available': 0,
-            # New metrics
             'Current_ROA': None,
             'FS_ROA': 0,
             'Current_FCFTA': None,
             'FS_FCFTA': 0,
             'ACCRUAL': None,
             'FS_ACCRUAL': 0,
-            'Data_Source': 'None',
+            'LEVER': None,
+            'FS_LEVER': 0,
+            'LIQUID': None,
+            'FS_LIQUID': 0,
         }
 
 # Main function to process all tickers
@@ -327,7 +336,9 @@ def process_all_tickers(tickers):
         'Margin_Stability',          # Higher is better
         'Current_ROA',               # Higher is better
         'Current_FCFTA',             # Higher is better
-        'ACCRUAL'                    # Higher is better
+        'ACCRUAL',                   # Higher is better
+        'LEVER',                     # Higher is better
+        'LIQUID'                     # Higher is better
     ]
     
     # Calculate percentiles for each metric
@@ -393,6 +404,18 @@ def process_all_tickers(tickers):
     
     # Apply the function to calculate Franchise Power Percentile
     results_df['Franchise_Power_Percentile'] = results_df.apply(calculate_franchise_power, axis=1)
+    
+    # Calculate Financial Strength Score (sum of all FS binary indicators)
+    fs_columns = [
+        'FS_ROA',
+        'FS_FCFTA',
+        'FS_ACCRUAL',
+        'FS_LEVER',
+        'FS_LIQUID'
+    ]
+    
+    # Sum up the FS indicators to get a Financial Strength Score (range: 0-6)
+    results_df['Financial_Strength_Score'] = results_df[fs_columns].sum(axis=1)
     
     # Display the results
     print(results_df.head())
@@ -462,55 +485,8 @@ def calculate_composite_score(results_df, weights=None):
     
     return results_df_sorted
 
-# Example usage
 if __name__ == "__main__":
-    # Full list of tickers as in original code
-    tickers = [
-        "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
-        "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
-        "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
-        "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
-        "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
-         "BAK", "BB", "BHP","BRK-B",
-        "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
-        "BP", "BRFS", "BRK-B", "CAAP", "CAH",
-         "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
-         "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
-        "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
-        "E", "EA", "EBAY", "EBR","EFX", "EQNR", "ERIC",
-        "ERJ", "ETSY", "F", "FCX", "FDX",
-        "FMX", "FSLR", "GE", "GFI", "GGB", "GILD",
-        "GLOB", "GLW", "GM", "GOOGL", "GRMN",
-        "GSK", "GT", "HAL", "HAPV3.SA", "HD", "HL", "HMC", "HMY",
-        "HOG", "HON", "HPQ", "HSY", "HUT", "HWM",
-         "IBM", "INFY", "INTC", "IP",
-        "ISRG","JBSS3.SA",
-        "JD", "JMIA", "JNJ","JOYY", "KEP", "KGC",
-        "KMB", "KO", "KOD", "LAC", "LAR", "LLY",
-        "LMT", "LND", "LRCX", "LREN3.SA", "LVS",  "MA", "MCD",
-         "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
-        "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
-        "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
-        "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
-        "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
-        "PBR", "PCAR", "PEP", "PFE", "PG",
-        "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
-         "RACE", "RBLX", "RENT3.SA", "RIO", "RIOT", "ROKU", "ROST", "RTX",
-         "SAP", "SATL", "SBS", "SBUX", "SCCO", "SDA", "SE",
-        "SHEL", "SHOP", "SID", "SLB", "SNA", "SNAP", "SNOW", "SONY", "SPCE",
-        "SPGI", "SPOT", "STLA", "STNE", "SYY", "T",
-        "TCOM", "TEN", "TGT", "TIMB", "TM",
-        "TMO", "TMUS", "TRIP", "TSLA", "TSM", "TTE", "TV", "TWLO",
-        "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
-         "UNP", "URBN", "V", "VALE",
-          "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
-        "XYZ", "YELP", "ZM"
-    ]
     
     # For testing, you can use a smaller subset
     test_tickers = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "META", "NFLX", "NVDA"]
-    
-    # Process the tickers - use full list or test list as needed
-    # Uncomment the line you want to use
     process_all_tickers(test_tickers)  # Use test list for testing
-    # process_all_tickers(tickers)  # Use full list for final analysis
