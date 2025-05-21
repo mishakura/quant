@@ -240,5 +240,3 @@ test = ["AAPL", "GOOG", "MSFT"]
 
 # Uncomment the line below to run on all tickers
 final_df = process_all_tickers(test)
-
-#asd
