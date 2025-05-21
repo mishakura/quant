@@ -22,7 +22,8 @@ def get_financial_metrics(ticker_symbol):
         balance_annual = ticker.get_balance_sheet(freq="yearly")
         cashflow_annual = ticker.get_cashflow(freq="yearly")
         
-        # Get quarterly balance sheet for LEVER and LIQUID calculations
+        # Get quarterly data for TTM calculations
+        income_quarterly = ticker.get_income_stmt(freq="quarterly")
         balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
         
         # Get info dictionary for Enterprise Value
@@ -203,9 +204,6 @@ def get_financial_metrics(ticker_symbol):
         lever = None
         fs_lever = 0  # Default to 0
         
-        # Get quarterly balance sheet data
-        balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
-        
         if len(balance_quarterly.columns) >= 4:  # Need at least 4 quarters of data to compare year-over-year
             current_quarter = balance_quarterly.columns[0]  # Most recent quarter
             year_ago_quarter = balance_quarterly.columns[4] if len(balance_quarterly.columns) >= 5 else balance_quarterly.columns[-1]  # Same quarter 1 year ago
@@ -235,7 +233,6 @@ def get_financial_metrics(ticker_symbol):
         liquid = None
         fs_liquid = 0  # Default to 0
         
-        # Already fetched quarterly balance sheet above
         if len(balance_quarterly.columns) >= 4:  # Need at least 4 quarters of data to compare year-over-year
             current_quarter = balance_quarterly.columns[0]  # Most recent quarter
             year_ago_quarter = balance_quarterly.columns[4] if len(balance_quarterly.columns) >= 5 else balance_quarterly.columns[-1]  # Same quarter 1 year ago
@@ -260,7 +257,83 @@ def get_financial_metrics(ticker_symbol):
                 # Calculate FS_LIQUID
                 fs_liquid = 1 if liquid > 0 else 0
         
-        # NEQISS metric removed as requested
+        # NEW METRIC 6: ROA_Change = year-over-year change in ROA using annual data
+        roa_change = None
+        fs_roa_change = 0  # Default to 0
+        
+        # Calculate ROA using annual data (more likely to be available)
+        if len(income_annual.columns) >= 2 and len(balance_annual.columns) >= 2:
+            # Get data for the most recent year (year 0)
+            current_year = income_annual.columns[0]
+            previous_year = income_annual.columns[1]
+            
+            # Calculate ROA for current year
+            current_net_income = income_annual.loc["NetIncome"][current_year] if "NetIncome" in income_annual.index else None
+            current_total_assets = balance_annual.loc["TotalAssets"][current_year] if "TotalAssets" in balance_annual.index and current_year in balance_annual.columns else None
+            
+            # Calculate ROA for previous year
+            previous_net_income = income_annual.loc["NetIncome"][previous_year] if "NetIncome" in income_annual.index else None
+            previous_total_assets = balance_annual.loc["TotalAssets"][previous_year] if "TotalAssets" in balance_annual.index and previous_year in balance_annual.columns else None
+            
+            # Calculate current year ROA and previous year ROA
+            current_roa_annual = None
+            previous_roa_annual = None
+            
+            if pd.notna(current_net_income) and pd.notna(current_total_assets) and current_total_assets > 0:
+                current_roa_annual = current_net_income / current_total_assets
+            
+            if pd.notna(previous_net_income) and pd.notna(previous_total_assets) and previous_total_assets > 0:
+                previous_roa_annual = previous_net_income / previous_total_assets
+            
+            # Calculate year-over-year change in ROA
+            if pd.notna(current_roa_annual) and pd.notna(previous_roa_annual):
+                roa_change = current_roa_annual - previous_roa_annual
+                
+                # Calculate FS_ROA_Change
+                fs_roa_change = 1 if roa_change > 0 else 0
+        
+        # NEW METRIC 7: FCFTA_Change = year-over-year change in FCFTA using annual data
+        fcfta_change = None
+        fs_fcfta_change = 0  # Default to 0
+        
+        # Calculate FCFTA using annual data
+        if len(cashflow_annual.columns) >= 2 and len(balance_annual.columns) >= 2:
+            # Get data for the most recent year (year 0)
+            current_year = cashflow_annual.columns[0]
+            previous_year = cashflow_annual.columns[1]
+            
+            # Get free cash flow for current year
+            current_fcf = cashflow_annual.loc["FreeCashFlow"][current_year] if "FreeCashFlow" in cashflow_annual.index else None
+            
+            # Get total assets for current year (ensure same year if possible)
+            current_assets = None
+            if current_year in balance_annual.columns:
+                current_assets = balance_annual.loc["TotalAssets"][current_year] if "TotalAssets" in balance_annual.index else None
+            
+            # Get free cash flow for previous year
+            previous_fcf = cashflow_annual.loc["FreeCashFlow"][previous_year] if "FreeCashFlow" in cashflow_annual.index else None
+            
+            # Get total assets for previous year (ensure same year if possible)
+            previous_assets = None
+            if previous_year in balance_annual.columns:
+                previous_assets = balance_annual.loc["TotalAssets"][previous_year] if "TotalAssets" in balance_annual.index else None
+            
+            # Calculate current year FCFTA and previous year FCFTA
+            current_fcfta_annual = None
+            previous_fcfta_annual = None
+            
+            if pd.notna(current_fcf) and pd.notna(current_assets) and current_assets > 0:
+                current_fcfta_annual = current_fcf / current_assets
+            
+            if pd.notna(previous_fcf) and pd.notna(previous_assets) and previous_assets > 0:
+                previous_fcfta_annual = previous_fcf / previous_assets
+            
+            # Calculate year-over-year change in FCFTA
+            if pd.notna(current_fcfta_annual) and pd.notna(previous_fcfta_annual):
+                fcfta_change = current_fcfta_annual - previous_fcfta_annual
+                
+                # Calculate FS_FCFTA_Change
+                fs_fcfta_change = 1 if fcfta_change > 0 else 0
         
         return {
             'Ticker': ticker_symbol,
@@ -283,6 +356,10 @@ def get_financial_metrics(ticker_symbol):
             'FS_LEVER': fs_lever,
             'LIQUID': liquid,
             'FS_LIQUID': fs_liquid,
+            'ROA_Change': roa_change,
+            'FS_ROA_Change': fs_roa_change,
+            'FCFTA_Change': fcfta_change,
+            'FS_FCFTA_Change': fs_fcfta_change,
         }
     
     except Exception as e:
@@ -308,6 +385,10 @@ def get_financial_metrics(ticker_symbol):
             'FS_LEVER': 0,
             'LIQUID': None,
             'FS_LIQUID': 0,
+            'ROA_Change': None,
+            'FS_ROA_Change': 0,
+            'FCFTA_Change': None,
+            'FS_FCFTA_Change': 0,
         }
 
 # Main function to process all tickers
@@ -338,7 +419,9 @@ def process_all_tickers(tickers):
         'Current_FCFTA',             # Higher is better
         'ACCRUAL',                   # Higher is better
         'LEVER',                     # Higher is better
-        'LIQUID'                     # Higher is better
+        'LIQUID',                    # Higher is better
+        'ROA_Change',                # Higher is better
+        'FCFTA_Change'               # Higher is better - newly added
     ]
     
     # Calculate percentiles for each metric
@@ -411,10 +494,12 @@ def process_all_tickers(tickers):
         'FS_FCFTA',
         'FS_ACCRUAL',
         'FS_LEVER',
-        'FS_LIQUID'
+        'FS_LIQUID',
+        'FS_ROA_Change',
+        'FS_FCFTA_Change'  # Added the new FS metric
     ]
     
-    # Sum up the FS indicators to get a Financial Strength Score (range: 0-6)
+    # Sum up the FS indicators to get a Financial Strength Score (range: 0-7)
     results_df['Financial_Strength_Score'] = results_df[fs_columns].sum(axis=1)
     
     # Display the results
