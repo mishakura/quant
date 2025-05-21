@@ -131,12 +131,12 @@ def get_financial_metrics(ticker_symbol):
                 gross_margin_growth = np.prod(np.array(growth_rates_for_calc)) ** (1 / len(growth_rates)) - 1
         
         # Add debug info for this ticker
-        print(f"Debug for {ticker_symbol}:")
-        print(f"- ROA values: {roa_values}")
-        print(f"- ROC values: {roc_values}")
-        print(f"- Eight-Year ROA: {eight_year_roa}")
-        print(f"- Eight-Year ROC: {eight_year_roc}")
-        print("-------------------")
+        #print(f"Debug for {ticker_symbol}:")
+        #print(f"- ROA values: {roa_values}")
+       # print(f"- ROC values: {roc_values}")
+        #print(f"- Eight-Year ROA: {eight_year_roa}")
+        #print(f"- Eight-Year ROC: {eight_year_roc}")
+        #print("-------------------")
         
         return {
             'Ticker': ticker_symbol,
@@ -147,10 +147,8 @@ def get_financial_metrics(ticker_symbol):
             'Eight_Year_ROC': eight_year_roc,
             'FCF_Sum_to_Assets': fcf_sum_to_assets,
             'Eight_Year_Gross_Margin_Growth': gross_margin_growth,
-            'Years_Data_Available': years,
-            'ROA_Data_Points': len(roa_values),
-            'ROC_Data_Points': len(roc_values)
-        }
+            'Years_Data_Available': years
+    }
     
     except Exception as e:
         print(f"Error getting data for {ticker_symbol}: {e}")
