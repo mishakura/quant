@@ -335,6 +335,53 @@ def get_financial_metrics(ticker_symbol):
                 # Calculate FS_FCFTA_Change
                 fs_fcfta_change = 1 if fcfta_change > 0 else 0
         
+        # NEW METRIC: MARGIN = year-over-year change in gross margin (annual data)
+        margin = None
+        fs_margin = 0  # Default to 0
+
+        if len(income_annual.columns) >= 2:
+            current_year = income_annual.columns[0]
+            previous_year = income_annual.columns[1]
+
+            gross_profit_current = income_annual.loc["GrossProfit"][current_year] if "GrossProfit" in income_annual.index else None
+            total_revenue_current = income_annual.loc["TotalRevenue"][current_year] if "TotalRevenue" in income_annual.index else None
+
+            gross_profit_previous = income_annual.loc["GrossProfit"][previous_year] if "GrossProfit" in income_annual.index else None
+            total_revenue_previous = income_annual.loc["TotalRevenue"][previous_year] if "TotalRevenue" in income_annual.index else None
+
+            if (
+                pd.notna(gross_profit_current) and pd.notna(total_revenue_current) and total_revenue_current > 0 and
+                pd.notna(gross_profit_previous) and pd.notna(total_revenue_previous) and total_revenue_previous > 0
+            ):
+                gross_margin_current = gross_profit_current / total_revenue_current
+                gross_margin_previous = gross_profit_previous / total_revenue_previous
+                margin = gross_margin_current - gross_margin_previous
+                fs_margin = 1 if margin > 0 else 0
+
+        # NEW METRIC: TURN = year-over-year change in asset turnover (annual data)
+        turn = None
+        fs_turn = 0  # Default to 0
+
+        if len(income_annual.columns) >= 2 and len(balance_annual.columns) >= 2:
+            current_year = income_annual.columns[0]
+            previous_year = income_annual.columns[1]
+
+            # Asset Turnover = TotalRevenue / TotalAssets
+            total_revenue_current = income_annual.loc["TotalRevenue"][current_year] if "TotalRevenue" in income_annual.index else None
+            total_assets_current = balance_annual.loc["TotalAssets"][current_year] if "TotalAssets" in balance_annual.index and current_year in balance_annual.columns else None
+
+            total_revenue_previous = income_annual.loc["TotalRevenue"][previous_year] if "TotalRevenue" in income_annual.index else None
+            total_assets_previous = balance_annual.loc["TotalAssets"][previous_year] if "TotalAssets" in balance_annual.index and previous_year in balance_annual.columns else None
+
+            if (
+                pd.notna(total_revenue_current) and pd.notna(total_assets_current) and total_assets_current > 0 and
+                pd.notna(total_revenue_previous) and pd.notna(total_assets_previous) and total_assets_previous > 0
+            ):
+                asset_turnover_current = total_revenue_current / total_assets_current
+                asset_turnover_previous = total_revenue_previous / total_assets_previous
+                turn = asset_turnover_current - asset_turnover_previous
+                fs_turn = 1 if turn > 0 else 0
+
         return {
             'Ticker': ticker_symbol,
             'OperatingIncome_TTM': operating_income,
@@ -360,6 +407,10 @@ def get_financial_metrics(ticker_symbol):
             'FS_ROA_Change': fs_roa_change,
             'FCFTA_Change': fcfta_change,
             'FS_FCFTA_Change': fs_fcfta_change,
+            'MARGIN': margin,
+            'FS_MARGIN': fs_margin,
+            'TURN': turn,           # <-- Added
+            'FS_TURN': fs_turn,     # <-- Added
         }
     
     except Exception as e:
@@ -389,6 +440,10 @@ def get_financial_metrics(ticker_symbol):
             'FS_ROA_Change': 0,
             'FCFTA_Change': None,
             'FS_FCFTA_Change': 0,
+            'MARGIN': None,
+            'FS_MARGIN': 0,
+            'TURN': None,          # <-- Added
+            'FS_TURN': 0,          # <-- Added
         }
 
 # Main function to process all tickers
@@ -421,7 +476,9 @@ def process_all_tickers(tickers):
         'LEVER',                     # Higher is better
         'LIQUID',                    # Higher is better
         'ROA_Change',                # Higher is better
-        'FCFTA_Change'               # Higher is better - newly added
+        'FCFTA_Change',              # Higher is better - newly added
+        'MARGIN',                    # Higher is better - newly added
+        'TURN',                      # Higher is better - newly added
     ]
     
     # Calculate percentiles for each metric
@@ -496,11 +553,27 @@ def process_all_tickers(tickers):
         'FS_LEVER',
         'FS_LIQUID',
         'FS_ROA_Change',
-        'FS_FCFTA_Change'  # Added the new FS metric
+        'FS_FCFTA_Change',
+        'FS_MARGIN',  # Added new FS metric
+        'FS_TURN',    # Added new FS metric
     ]
     
     # Sum up the FS indicators to get a Financial Strength Score (range: 0-7)
     results_df['Financial_Strength_Score'] = results_df[fs_columns].sum(axis=1)
+    
+    # Calculate P_FS (Proportion Financial Strength Score)
+    p_fs_columns = [
+        'FS_ROA',
+        'FS_FCFTA',
+        'FS_ACCRUAL',
+        'FS_LEVER',
+        'FS_LIQUID',
+        'FS_ROA_Change',
+        'FS_FCFTA_Change',
+        'FS_MARGIN',
+        'FS_TURN',
+    ]
+    results_df['P_FS'] = results_df[p_fs_columns].sum(axis=1) / 9
     
     # Display the results
     print(results_df.head())
