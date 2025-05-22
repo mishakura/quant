@@ -575,6 +575,12 @@ def process_all_tickers(tickers):
     ]
     results_df['P_FS'] = results_df[p_fs_columns].sum(axis=1) / 9
     
+    # Calculate QUALITY = 0.5 × Franchise Power Percentile + 0.5 × P_FS
+    results_df['QUALITY'] = 0.5 * results_df['Franchise_Power_Percentile'] + 0.5 * results_df['P_FS']
+    
+    # Calculate QUANTITATIVE_VALUE = QUALITY + 2 × OperatingIncome_EV_Ratio_Percentile
+    results_df['QUANTITATIVE_VALUE'] = results_df['QUALITY'] + 2 * results_df['OperatingIncome_EV_Ratio_Percentile']
+    
     # Display the results
     print(results_df.head())
     
