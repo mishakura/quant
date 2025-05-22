@@ -1,5 +1,5 @@
 import yfinance as yf
 ticker = yf.Ticker("AAPL")
-balance_quarterly = ticker.get_balance_sheet(freq="quarterly")
+balance_quarterly = ticker.get_balance_sheet(freq="yearly")
 
 print(balance_quarterly.columns)
