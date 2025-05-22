@@ -19,6 +19,16 @@ def get_financial_metrics(ticker_symbol):
         income_ttm = ticker.get_income_stmt(freq="trailing")
         info = ticker.info
 
+        # Get actual price and mean price target
+        actual_price = info.get('regularMarketPrice', None)
+        target_mean_price = info.get('targetMeanPrice', None)
+        price_target_pct = None
+        if actual_price and target_mean_price and actual_price > 0:
+            price_target_pct = (target_mean_price / actual_price) - 1
+
+        # Get financial statement currency (no longer needed in CSV)
+        financial_currency = info.get('financialCurrency', None)
+
         # EBIT/EV (Operating Income TTM / Most recent EV)
         operating_income = None
         if 'OperatingIncome' in income_ttm.index:
@@ -254,7 +264,11 @@ def get_financial_metrics(ticker_symbol):
 
         return {
             'Ticker': ticker_symbol,
-            'MarketCap': market_cap,  # <-- Added here
+            'MarketCap': market_cap,
+            'ActualPrice': actual_price,
+            'TargetMeanPrice': target_mean_price,
+            'TargetMeanPricePct': price_target_pct,
+            'FinancialCurrency': financial_currency,  # <-- Always include this!
             'OperatingIncome_TTM': operating_income,
             'EnterpriseValue': enterprise_value,
             'OperatingIncome_EV_Ratio': operating_income_to_ev,
@@ -289,6 +303,10 @@ def get_financial_metrics(ticker_symbol):
         return {
             'Ticker': ticker_symbol,
             'MarketCap': None,
+            'ActualPrice': None,
+            'TargetMeanPrice': None,
+            'TargetMeanPricePct': None,
+            'FinancialCurrency': None,  # <-- Always include this!
             'OperatingIncome_TTM': None,
             'EnterpriseValue': None,
             'OperatingIncome_EV_Ratio': None,
@@ -326,6 +344,10 @@ def process_all_tickers(tickers):
         results.append(metrics)
         time.sleep(1)
     results_df = pd.DataFrame(results)
+
+    # Only filter if the column exists
+    if 'FinancialCurrency' in results_df.columns:
+        results_df = results_df[results_df['FinancialCurrency'] == 'USD'].reset_index(drop=True)
 
     metrics_for_percentile = [
         'OperatingIncome_EV_Ratio',
@@ -443,5 +465,47 @@ def calculate_composite_score(results_df, weights=None):
     return results_df_sorted
 
 if __name__ == "__main__":
-    test_tickers = ["AAPL", "MSFT", "GOOG", "AMZN", "TSLA", "META", "NFLX", "NVDA"]
-    process_all_tickers(test_tickers)
+    tickers = [
+        "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
+        "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
+        "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
+        "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
+        "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
+         "BAK", "BB", "BHP","BRK-B",
+        "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
+        "BP", "BRFS", "BRK-B", "CAAP", "CAH",
+         "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
+         "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
+        "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
+        "E", "EA", "EBAY", "EBR","EFX", "EQNR", "ERIC",
+        "ERJ", "ETSY", "F", "FCX", "FDX",
+        "FMX", "FSLR", "GE", "GFI", "GGB", "GILD",
+        "GLOB", "GLW", "GM", "GOOGL", "GRMN",
+        "GSK", "GT", "HAL", "HAPV3.SA", "HD", "HL", "HMC", "HMY",
+        "HOG", "HON", "HPQ", "HSY", "HUT", "HWM",
+         "IBM", "INFY", "INTC", "IP",
+        "ISRG","JBSS3.SA",
+        "JD", "JMIA", "JNJ","JOYY", "KEP", "KGC",
+        "KMB", "KO", "KOD", "LAC", "LAR", "LLY",
+        "LMT", "LND", "LRCX", "LREN3.SA", "LVS",  "MA", "MCD",
+         "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
+        "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
+        "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
+        "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
+        "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
+        "PBR", "PCAR", "PEP", "PFE", "PG",
+        "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
+         "RACE", "RBLX", "RENT3.SA", "RIO", "RIOT", "ROKU", "ROST", "RTX",
+         "SAP", "SATL", "SBS", "SBUX", "SCCO", "SDA", "SE",
+        "SHEL", "SHOP", "SID", "SLB", "SNA", "SNAP", "SNOW", "SONY", "SPCE",
+        "SPGI", "SPOT", "STLA", "STNE", "SYY", "T",
+        "TCOM", "TEN", "TGT", "TIMB", "TM",
+        "TMO", "TMUS", "TRIP", "TSLA", "TSM", "TTE", "TV", "TWLO",
+        "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
+         "UNP", "URBN", "V", "VALE",
+          "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
+        "XYZ", "YELP", "ZM"
+    ]
+
+    test_tickers = ["HMY","ZM"]
+    process_all_tickers(tickers)
