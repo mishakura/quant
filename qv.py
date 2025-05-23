@@ -4,6 +4,7 @@ import numpy as np
 import time
 from datetime import datetime, timedelta
 from scipy import stats
+from tickers import tickers  # Import tickers from tickers.py
 
 #TO-DO!
 # Select the top 10% by EBIT/EV and then calculate quality BUT STILL HAVE THE COMPLETE CSV ANALYSIS
@@ -447,16 +448,16 @@ def process_all_tickers(tickers):
     results_df['QUANTITATIVE_VALUE'] = results_df['QUALITY'] + 2 * results_df['OperatingIncome_EV_Ratio_Percentile']
 
     print(results_df.head())
-    results_df.to_csv('financial_metrics_extended2.csv', index=False)
+    results_df.to_csv('qv_all_data.csv', index=False)
 
-    # Filter for top 10% by OperatingIncome_EV_Ratio
+    # Change from 0.9 (90th percentile) to 0.8 (80th percentile) to get top 20%
     if 'OperatingIncome_EV_Ratio' in results_df.columns:
-        threshold = results_df['OperatingIncome_EV_Ratio'].quantile(0.9)
-        top_10_df = results_df[results_df['OperatingIncome_EV_Ratio'] >= threshold]
+        threshold = results_df['OperatingIncome_EV_Ratio'].quantile(0.8)  # Changed from 0.9 to 0.8
+        top_20_df = results_df[results_df['OperatingIncome_EV_Ratio'] >= threshold]  # Variable name changed to reflect 20%
         # Filter for MarketCap > 1.4 billion (1_400_000_000)
-        top_10_df = top_10_df[top_10_df['MarketCap'] > 1_400_000_000]
-        top_10_df.to_csv('quantitative_value.csv', index=False)
-        print(f"Saved top 10% OperatingIncome_EV_Ratio with MarketCap > $1.4B to quantitative_value.csv ({len(top_10_df)} rows)")
+        top_20_df = top_20_df[top_20_df['MarketCap'] > 1_400_000_000]
+        top_20_df.to_csv('quantitative_value.csv', index=False)
+        print(f"Saved top 20% OperatingIncome_EV_Ratio with MarketCap > $1.4B to quantitative_value.csv ({len(top_20_df)} rows)")
     else:
         print("OperatingIncome_EV_Ratio column not found, could not create quantitative_value.csv")
 
@@ -488,51 +489,4 @@ def calculate_composite_score(results_df, weights=None):
     return results_df_sorted
 
 if __name__ == "__main__":
-    tickers = [
-        "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
-        "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
-        "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
-        "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
-        "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
-         "BAK", "BB", "BHP","BRK-B",
-        "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
-        "BP", "BRFS", "CAAP", "CAH",
-         "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
-         "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
-        "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
-        "E", "EA", "EBAY", "EBR","EFX", "EQNR", "ERIC",
-        "ERJ", "ETSY", "F", "FCX", "FDX",
-        "FMX", "FSLR", "GE", "GFI", "GGB", "GILD",
-        "GLOB", "GLW", "GM", "GOOGL", "GRMN",
-        "GSK", "GT", "HAL", "HAPV3.SA", "HD", "HL", "HMC", "HMY",
-        "HOG", "HON", "HPQ", "HSY", "HUT", "HWM",
-         "IBM", "INFY", "INTC", "IP",
-        "ISRG","JBSS3.SA",
-        "JD", "JMIA", "JNJ","JOYY", "KEP", "KGC",
-        "KMB", "KO", "KOD", "LAC", "LAR", "LLY",
-        "LMT", "LND", "LRCX", "LREN3.SA", "LVS",  "MA", "MCD",
-         "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
-        "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
-        "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
-        "NKE", "NTCO", "NTES", "NUE", "NVDA", "NVS",
-        "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
-        "PBR", "PCAR", "PEP", "PFE", "PG",
-        "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
-         "RACE", "RBLX", "RENT3.SA", "RIO", "RIOT", "ROKU", "ROST", "RTX",
-         "SAP", "SATL", "SBS", "SBUX", "SCCO", "SDA", "SE",
-        "SHEL", "SHOP", "SID", "SLB", "SNA", "SNAP", "SNOW", "SONY", "SPCE",
-        "SPGI", "SPOT", "STLA", "STNE", "SYY", "T",
-        "TCOM", "TEN", "TGT", "TIMB", "TM",
-        "TMO", "TMUS", "TRIP", "TSLA", "TSM", "TTE", "TV", "TWLO",
-        "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
-         "UNP", "URBN", "V", "VALE",
-          "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
-        "XYZ", "YELP", "ZM", "ADS","AEG","AXP","AIG","BBD","BBAS3.SA","BSBR","SAN","BAC","BCS","BAS","BAYN",
-        "BBV","SCHW","C","ELP","CS","BSN","DTEA","EOAN","AKO-B","FNMA", "FMCC","GPRK","HDB","HHPD",
-        "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG","MUFG","NEC1.HM","NSAN",
-        "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TXR","BK","GS","TRVV",
-        "TJX", "USB", "UPST","WBO","WFC","AUY","YZCA"
-    ]
-
-    test_tickers = ["AAPL","MSFT","GOOGL","AMZN","META","NFLX","SPOT"]
-    process_all_tickers(test_tickers)
+    process_all_tickers(tickers)

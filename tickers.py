@@ -1,6 +1,6 @@
 tickers = [
         "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
-        "ACN", "ADBE", "ADGO", "ADI", "ADP", "AEM", "AMAT",
+        "ACN", "ADBE", "AGRO", "ADI", "ADP", "AEM", "AMAT",
         "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
         "AVGO", "AVY", "AZN","ASML","AI","TEAM","CLS","CEG","DECK","RGTI",
         "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
