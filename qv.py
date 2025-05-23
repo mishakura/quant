@@ -110,7 +110,13 @@ def get_financial_metrics(ticker_symbol):
                 margin_stability = avg_gross_margin / std_gross_margin
         gross_margin_growth = None
         if len(gross_margins) > 1:
-            gross_margin_growth = (gross_margins[0] / gross_margins[-1]) ** (1 / (len(gross_margins) - 1)) - 1
+            # Only calculate if both are positive and denominator is not zero
+            if gross_margins[0] > 0 and gross_margins[-1] > 0:
+                gross_margin_growth = (gross_margins[0] / gross_margins[-1]) ** (1 / (len(gross_margins) - 1)) - 1
+            else:
+                gross_margin_growth = None
+        if isinstance(gross_margin_growth, complex):
+            gross_margin_growth = float('nan')
 
         # NEW METRIC 1: Current ROA = Net income before extraordinary items (t) / total assets (t)
         current_roa = None
@@ -507,5 +513,5 @@ if __name__ == "__main__":
         "XYZ", "YELP", "ZM"
     ]
 
-    test_tickers = ["HMY","ZM"]
-    process_all_tickers(tickers)
+    test_tickers = ["AAPL"]
+    process_all_tickers(test_tickers)
