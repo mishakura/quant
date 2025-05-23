@@ -514,4 +514,4 @@ if __name__ == "__main__":
     ]
 
     test_tickers = ["AAPL"]
-    process_all_tickers(test_tickers)
+    process_all_tickers(tickers)
