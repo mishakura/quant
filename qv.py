@@ -450,11 +450,11 @@ def process_all_tickers(tickers):
     print(results_df.head())
     results_df.to_csv('qv_all_data.csv', index=False)
 
-    # Change from 0.9 (90th percentile) to 0.8 (80th percentile) to get top 20%
+    # Filter for top 20% by Operating Income/EV ratio
     if 'OperatingIncome_EV_Ratio' in results_df.columns:
-        threshold = results_df['OperatingIncome_EV_Ratio'].quantile(0.8)  # Changed from 0.9 to 0.8
-        top_20_df = results_df[results_df['OperatingIncome_EV_Ratio'] >= threshold]  # Variable name changed to reflect 20%
-        # Filter for MarketCap > 1.4 billion (1_400_000_000)
+        threshold = results_df['OperatingIncome_EV_Ratio'].quantile(0.8)  # Changed to 0.8 for top 20%
+        top_20_df = results_df[results_df['OperatingIncome_EV_Ratio'] >= threshold]
+        # Filter for MarketCap > 1.4 billion
         top_20_df = top_20_df[top_20_df['MarketCap'] > 1_400_000_000]
         top_20_df.to_csv('quantitative_value.csv', index=False)
         print(f"Saved top 20% OperatingIncome_EV_Ratio with MarketCap > $1.4B to quantitative_value.csv ({len(top_20_df)} rows)")
