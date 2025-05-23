@@ -6,7 +6,7 @@ tickers = [
         "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
          "BAK", "BB", "BHP","BRK-B",
         "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
-        "BP", "BRFS", "BRK-B", "CAAP", "CAH",
+        "BP", "BRFS", "CAAP", "CAH",
          "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
          "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
         "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
@@ -24,7 +24,7 @@ tickers = [
          "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
         "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
         "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
-        "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
+        "NKE", "NTCO", "NTES", "NUE", "NVDA", "NVS",
         "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
         "PBR", "PCAR", "PEP", "PFE", "PG",
         "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
@@ -37,5 +37,9 @@ tickers = [
         "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
          "UNP", "URBN", "V", "VALE",
           "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
-        "XYZ", "YELP", "ZM"
+        "XYZ", "YELP", "ZM", "ADS","AEG","AXP","AIG","BBD","BBAS3.SA","BSBR","SAN","BAC","BCS","BAS","BAYN",
+        "BBV","SCHW","C","ELP","CS","BSN","DTEA","EOAN","AKO-B","FNMA", "FMCC","GPRK","HDB","HHPD",
+        "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG","MUFG","NEC1.HM","NSAN",
+        "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TXR","BK","GS","TRVV",
+        "TJX", "USB", "UPST","WBO","WFC","AUY","YZCA"
     ]

@@ -5,6 +5,11 @@ import time
 from datetime import datetime, timedelta
 from scipy import stats
 
+#TO-DO!
+# Select the top 10% by EBIT/EV and then calculate quality BUT STILL HAVE THE COMPLETE CSV ANALYSIS
+# Filter companies with a market cap > 1.4b
+# Database of yearly data to keep adding yearly data in the coming years(the maximum now is 5 years)
+
 def get_financial_metrics(ticker_symbol):
     """Fetch financial metrics for a given ticker."""
     try:
@@ -442,7 +447,19 @@ def process_all_tickers(tickers):
     results_df['QUANTITATIVE_VALUE'] = results_df['QUALITY'] + 2 * results_df['OperatingIncome_EV_Ratio_Percentile']
 
     print(results_df.head())
-    results_df.to_csv('financial_metrics_extended.csv', index=False)
+    results_df.to_csv('financial_metrics_extended2.csv', index=False)
+
+    # Filter for top 10% by OperatingIncome_EV_Ratio
+    if 'OperatingIncome_EV_Ratio' in results_df.columns:
+        threshold = results_df['OperatingIncome_EV_Ratio'].quantile(0.9)
+        top_10_df = results_df[results_df['OperatingIncome_EV_Ratio'] >= threshold]
+        # Filter for MarketCap > 1.4 billion (1_400_000_000)
+        top_10_df = top_10_df[top_10_df['MarketCap'] > 1_400_000_000]
+        top_10_df.to_csv('quantitative_value.csv', index=False)
+        print(f"Saved top 10% OperatingIncome_EV_Ratio with MarketCap > $1.4B to quantitative_value.csv ({len(top_10_df)} rows)")
+    else:
+        print("OperatingIncome_EV_Ratio column not found, could not create quantitative_value.csv")
+
     return results_df
 
 def calculate_composite_score(results_df, weights=None):
@@ -479,7 +496,7 @@ if __name__ == "__main__":
         "B", "BA", "BABA","NOW","VST","VRTX","PATH","PDD","XPEV",
          "BAK", "BB", "BHP","BRK-B",
         "BIDU", "BIIB", "BIOX", "BITF", "BKNG", "BKR", "BMY",
-        "BP", "BRFS", "BRK-B", "CAAP", "CAH",
+        "BP", "BRFS", "CAAP", "CAH",
          "CAR", "CAT", "CCL", "CDE", "CL", "COIN", "COST", "CRM",
          "CSCO", "CSNA3.SA", "CVS", "CVX", "CX", "DAL", "DD",
         "DE", "DEO", "DHR", "DIS", "DOCU", "DOW",
@@ -497,7 +514,7 @@ if __name__ == "__main__":
          "MDLZ", "MDT", "MELI", "META", "MGLU3.SA", "MMC", "MMM",
         "MO", "MOS", "MRK", "MRNA", "MRVL", "MSFT", "MSI", "MSTR",
         "MU", "MUX", "NEM", "NFLX", "NG", "NGG", "NIO",
-        "NKE", "NTCO3.SA", "NTES", "NUE", "NVDA", "NVS",
+        "NKE", "NTCO", "NTES", "NUE", "NVDA", "NVS",
         "NXE", "ORCL", "ORLY", "OXY", "PAAS", "PAC", "PAGS", "PANW", "PBI",
         "PBR", "PCAR", "PEP", "PFE", "PG",
         "PHG", "PINS", "PLTR", "PM", "PRIO3.SA", "PSX", "PYPL", "QCOM",
@@ -510,8 +527,12 @@ if __name__ == "__main__":
         "TXN", "UAL", "UBER", "UGP", "UL", "UNH",
          "UNP", "URBN", "V", "VALE",
           "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
-        "XYZ", "YELP", "ZM"
+        "XYZ", "YELP", "ZM", "ADS","AEG","AXP","AIG","BBD","BBAS3.SA","BSBR","SAN","BAC","BCS","BAS","BAYN",
+        "BBV","SCHW","C","ELP","CS","BSN","DTEA","EOAN","AKO-B","FNMA", "FMCC","GPRK","HDB","HHPD",
+        "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG","MUFG","NEC1.HM","NSAN",
+        "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TXR","BK","GS","TRVV",
+        "TJX", "USB", "UPST","WBO","WFC","AUY","YZCA"
     ]
 
-    test_tickers = ["AAPL"]
-    process_all_tickers(tickers)
+    test_tickers = ["AAPL","MSFT","GOOGL","AMZN","META","NFLX","SPOT"]
+    process_all_tickers(test_tickers)
