@@ -1,4 +1,4 @@
-tickers = [
+tickers = ["YPF","BMA","GGAL","IRS","TEO","SUPV","BBAR","TGS","PAM","LOMA","CEPU","CRESY","EDN",
         "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
         "ACN", "ADBE", "AGRO", "ADI", "ADP", "AEM", "AMAT",
         "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
@@ -40,6 +40,6 @@ tickers = [
         "XYZ", "YELP", "ZM", "ADS","AEG","AXP","AIG","BBD","BBAS3.SA","BSBR","SAN","BAC","BCS","BAS","BAYN",
         "BBV","SCHW","C","ELP","CS","BSN","DTEA","EOAN","AKO-B","FNMA", "FMCC","GPRK","HDB","HHPD",
         "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG","MUFG","NEC1.HM","NSAN",
-        "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TXR","BK","GS","TRVV",
-        "TJX", "USB", "UPST","WBO","WFC","AUY","YZCA"
+        "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TX","BK","GS","TRVV",
+        "TJX", "USB", "UPST","WBO","WFC","AUY","YZCAY"
     ]
