@@ -1,29 +1,43 @@
-"""Hello, we are going to code a momentum strategy (long only). We are going to use the algorithm from the book Quantitative Momentum from Wesley R Gray and Jack R Vogel.
 
-- We are going to use yahoo finance data
-- The universe of assets its in tickers.py (its a tickers array)
-_ We calculate the generic momentum measure as the total return (including dividends) of a stock over some particular look-back
-period (e.g., the past 12 months) and skip the most recent month. We calculate this measure for all stocks in our investment universe.
-- Next we will filter does stock that had a recent and really large short-term spike (becouse those stocks usually presents mean reversion characteristics). The calculation
-for the measure is described as follows:
-FIP = 1∗[% negative − % positive]
-
-In step 4, we determine the model portfolio and
-conduct our rebalance at the end of February, May, August, and November
-to exploit seasonality effects.
-"""
 
 import yfinance as yf
 import pandas as pd
 from datetime import datetime
 from tickers import tickers
 
+""""
+Yahoo finance for the end date takes your date - 1 day
+So its important to set the end date to rebalance date + 1
+The rebalance is on the end of Feb, May, Aug , Nov.
+So the correct dates to input are:
+2025-03-01
+2025-06-01
+2025-09-01
+2025-12-01
+"""
+user_end_date = pd.Timestamp("2025-03-01")  # INPUT THE DATES LISTED ABOVE THE CODE
 
+# 1. Check if input date is in the future
+today = pd.Timestamp(datetime.today().date())
+if user_end_date > today:
+    print(f"ERROR: The input date {user_end_date.date()} is in the future. Please use a valid date up to {today.date()}.")
+    exit()
 
+# Use user input as end_date
+end_date = user_end_date
 
-today = datetime.today()
-end_date = today - pd.DateOffset(months=1)
-start_date = (end_date - pd.DateOffset(months=12))
+start_date = end_date - pd.DateOffset(months=13)
+def get_rebalance_dates(years):
+    if isinstance(years, int):
+        years = [years]
+    months = [2, 5, 8, 11]  # Feb, May, Aug, Nov
+    dates = []
+    for year in years:
+        for month in months:
+            last_day = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(0)
+            rebalance_day = last_day + pd.Timedelta(days=1)
+            dates.append(rebalance_day)
+    return dates
 
 us_exchanges = {'NMS', 'NYQ', 'AMEX', 'BATS', 'ARCX', 'PCX', 'NGM', 'NSC', 'XASE', 'XNAS', 'XNYS'}
 force_us_tickers = {'GGAL', 'RGTI', 'NG', 'RIOT', 'SATL', 'SDA'}  # Always treat these as US
@@ -33,7 +47,6 @@ skipped_tickers = []
 
 # Step 1: Calculate momentum for all stocks
 for ticker in tickers:
-    print(f"Checking exchange for {ticker}...")
     t = yf.Ticker(ticker)
     try:
         info = t.info
@@ -43,7 +56,6 @@ for ticker in tickers:
         skipped_tickers.append((ticker, f"info error: {e}"))
         continue
 
-    # Pass if in force_us_tickers, otherwise check exchange
     if ticker not in force_us_tickers and exchange not in us_exchanges:
         print(f"Skipping {ticker} (exchange: {exchange})")
         skipped_tickers.append((ticker, f"exchange: {exchange}"))
@@ -58,7 +70,8 @@ for ticker in tickers:
     adj_close.index = pd.to_datetime(adj_close.index)
     monthly_prices = adj_close.resample('ME').last()
     monthly_returns = monthly_prices.pct_change().dropna()
-    if len(monthly_returns) < 2:
+    monthly_returns = monthly_returns[-12:]
+    if len(monthly_returns) < 12:
         skipped_tickers.append((ticker, "not enough monthly returns"))
         continue
     momentum = (monthly_returns[:-1] + 1).prod() - 1
@@ -75,7 +88,7 @@ if len(momentum_scores) == 0:
 momentum_df = pd.DataFrame(list(momentum_scores.items()), columns=['Ticker', 'Momentum'])
 momentum_df = momentum_df.sort_values(by='Momentum', ascending=False)
 top_10pct_count = max(1, int(len(momentum_df) * 0.10))
-top_momentum_df = momentum_df.head(top_10pct_count).copy()  # Add .copy() here
+top_momentum_df = momentum_df.head(top_10pct_count).copy()
 
 # Step 3: Calculate FIP for top 10% momentum stocks
 fip_scores = {}
@@ -109,6 +122,9 @@ final_df = top_momentum_df.head(top_50pct_count)
 # Step 5: Save to CSV
 final_df.to_csv('momentum_fip_scores.csv', index=False)
 print("Momentum and FIP scores saved to momentum_fip_scores.csv")
+
+# Example usage:
+rebalance_dates = get_rebalance_dates([2025])
 
 
 
