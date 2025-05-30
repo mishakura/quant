@@ -7,8 +7,6 @@ from scipy import stats
 from tickers import tickers  # Import tickers from tickers.py
 
 #TO-DO!
-# Select the top 10% by EBIT/EV and then calculate quality BUT STILL HAVE THE COMPLETE CSV ANALYSIS
-# Filter companies with a market cap > 1.4b
 # Database of yearly data to keep adding yearly data in the coming years(the maximum now is 5 years)
 
 def get_financial_metrics(ticker_symbol):
