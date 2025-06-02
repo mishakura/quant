@@ -1,4 +1,4 @@
-tickers = [
+tickers = ["YPF","GGAL","BBAR","SUPV","PAM","TGS","TEO","IRS","CRESY","LOMA","BMA","EDN","CEPU",
         "AAL", "AAP", "AAPL", "ABBV", "ABEV", "ABNB", "ABT",
         "ACN", "ADBE", "AGRO", "ADI", "ADP", "AEM", "AMAT",
         "AMD", "AMGN", "AMX", "AMZN", "ANF", "ARCO", "ARM", "ASR",
