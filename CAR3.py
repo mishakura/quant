@@ -15,11 +15,15 @@ for ticker_symbol in tickers:
     try:
         info = ticker.info
         exchange = info.get('exchange', '').upper()
+        market_cap = info.get('marketCap', 0)
     except Exception as e:
         print(f"Skipping {ticker_symbol}: error fetching info ({e})")
         continue
     if exchange not in us_exchanges:
         print(f"Skipping {ticker_symbol}: not a US exchange ({exchange})")
+        continue
+    if not market_cap or market_cap < 2_000_000_000:
+        print(f"Skipping {ticker_symbol}: market cap too small ({market_cap})")
         continue
 
     print(f"Downloading data for {ticker_symbol}...")  # <-- Add this line
