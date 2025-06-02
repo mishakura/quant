@@ -4,7 +4,8 @@ TO-DO!
 Test SUE.PY
 Industry Momentum?
 
-check for medium and large cap filter
+check for medium and large cap filter.
+SUE.PY think to make it work.
 
 
 
