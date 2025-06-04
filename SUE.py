@@ -1,88 +1,89 @@
 import requests
+import pandas as pd
 import numpy as np
-import csv
 import time
 from tickers import tickers
+import warnings
 
-API_KEY = "zYbh0y_1wnVdlzSjCFVk6dHHMAMbOEm5"
+warnings.filterwarnings("ignore", category=RuntimeWarning)
+
+API_KEY = "0KFXJZ7FMBVLXY8V"
 TICKERS = tickers
-URL = f"https://api.polygon.io/vX/reference/financials"
 
-results = []
-not_found = []
-
-for TICKER in TICKERS:
-    print(f"Downloading data for {TICKER}...")
-    params = {
-        "ticker": TICKER,
-        "limit": 50,
-        "type": "Q",
-        "apiKey": API_KEY
-    }
+def fetch_eps_quarterly(symbol, api_key):
+    print(f"Downloading data for {symbol}...")
+    url = f"https://www.alphavantage.co/query?function=EARNINGS&symbol={symbol}&apikey={api_key}"
     try:
-        response = requests.get(URL, params=params)
-        print(f"Status code for {TICKER}: {response.status_code}")
-        data = response.json()
-        time.sleep(20)
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        if 'quarterlyEarnings' not in data:
+            print(f"Error: No quarterlyEarnings for {symbol}")
+            return None
+        eps_df = pd.DataFrame(data['quarterlyEarnings'])
+        eps_df['fiscalDateEnding'] = pd.to_datetime(eps_df['fiscalDateEnding'])
+        eps_df['reportedEPS'] = pd.to_numeric(eps_df['reportedEPS'], errors='coerce')
+        eps_df = eps_df.sort_values('fiscalDateEnding')
+        return eps_df[['fiscalDateEnding', 'reportedEPS']].reset_index(drop=True)
     except Exception as e:
-        print(f"Error downloading data for {TICKER}: {e}")
-        not_found.append(TICKER)
-        time.sleep(20)
-        continue
+        print(f"Error downloading {symbol}: {e}")
+        return None
 
-    eps_by_quarter = []
-    if "results" in data and data["results"]:
-        for report in data["results"]:
-            fiscal_period = report.get("fiscal_period", "N/A")
-            fiscal_year = report.get("fiscal_year", "N/A")
-            if fiscal_period in ["Q1", "Q2", "Q3", "Q4"]:
-                income_statement = report.get("financials", {}).get("income_statement", {})
-                eps = income_statement.get("basic_earnings_per_share", {}).get("value", None)
-                if eps is not None:
-                    eps_by_quarter.append((int(fiscal_year), fiscal_period, eps))
-    else:
-        not_found.append(TICKER)
-        continue
+def compute_yoy_changes(eps_df):
+    eps_df['YoY_Change'] = eps_df['reportedEPS'].pct_change(4)
+    return eps_df
 
-    if len(eps_by_quarter) < 9:
-        not_found.append(TICKER)
-        continue
-
-    quarter_order = {"Q4": 4, "Q3": 3, "Q2": 2, "Q1": 1}
-    eps_by_quarter.sort(key=lambda x: (x[0], quarter_order[x[1]]), reverse=True)
-    eps_dict = {(y, q): eps for y, q, eps in eps_by_quarter}
-
-    # Calculate YoY % changes for all available quarters
-    yoy_changes_full = []
-    for y, q, eps in eps_by_quarter:
-        prev_year = y - 1
-        prev_eps = eps_dict.get((prev_year, q))
-        yoy_pct_change = None
-        if prev_eps is not None and prev_eps != 0:
-            yoy_pct_change = (eps - prev_eps) / abs(prev_eps)
-            yoy_changes_full.append((y, q, yoy_pct_change))
-
-    # Calculate most recent SUE (using the most recent YoY change and previous 8)
-    quarter_order = {"Q4": 4, "Q3": 3, "Q2": 2, "Q1": 1}
-    yoy_changes_full_sorted = sorted(yoy_changes_full, key=lambda x: (x[0], quarter_order[x[1]]), reverse=True)
-    if len(yoy_changes_full_sorted) >= 9:
-        most_recent_change = yoy_changes_full_sorted[0][2]
-        prev_8_changes = [chg[2] for chg in yoy_changes_full_sorted[1:9]]
-        if all(x is not None for x in prev_8_changes):
-            stdev = np.std(prev_8_changes, ddof=1)
-            sue = most_recent_change / stdev if stdev != 0 else float('inf')
-            results.append([TICKER, sue])
+def compute_sue(eps_df):
+    sue_list = []
+    for idx in range(8, len(eps_df)):
+        last_8_yoy = eps_df.loc[idx-8:idx-1, 'YoY_Change'].dropna()
+        if len(last_8_yoy) == 8:
+            stdev = last_8_yoy.std(ddof=0)
+            most_recent_yoy = eps_df.loc[idx, 'YoY_Change']
+            sue = most_recent_yoy / stdev if stdev != 0 else np.nan
         else:
-            not_found.append(TICKER)
+            sue = np.nan
+        sue_list.append(sue)
+    eps_df['SUE'] = [np.nan]*8 + sue_list
+    return eps_df
+
+def main():
+    results = []
+    for ticker in TICKERS:
+        eps_df = fetch_eps_quarterly(ticker, API_KEY)
+        if eps_df is None or eps_df.empty:
+            print(f"Skipping {ticker} due to missing data.")
+            time.sleep(1)
+            continue
+        eps_df = compute_yoy_changes(eps_df)
+        eps_df = compute_sue(eps_df)
+        eps_df = eps_df.sort_values('fiscalDateEnding', ascending=False).reset_index(drop=True)
+        most_recent = eps_df.loc[0]
+        if pd.isna(most_recent['SUE']):
+            print(f"No valid SUE for {ticker}.")
+            time.sleep(1)
+            continue
+        results.append({
+            'Ticker': ticker,
+            'Date': most_recent['fiscalDateEnding'].strftime('%Y-%m-%d'),
+            'SUE': most_recent['SUE']
+        })
+        time.sleep(1)  # 1 second sleep = 60 calls/minute, safe for 75/min limit
+
+    if results:
+        df = pd.DataFrame(results)
+        df = df.sort_values('SUE', ascending=True).reset_index(drop=True)
+        print("\nMost recent SUE per ticker (ascending order):")
+        print(df)
+        # Filter top 10% SUE
+        threshold = df['SUE'].quantile(0.9)
+        top_10_df = df[df['SUE'] >= threshold].reset_index(drop=True)
+        top_10_df.to_csv("top_10_percent_SUE_per_ticker.csv", index=False)
+        print("\nTop 10% SUE per ticker (saved to top_10_percent_SUE_per_ticker.csv):")
+        print(top_10_df)
     else:
-        not_found.append(TICKER)
+        print("No valid SUE data collected.")
+
+if __name__ == "__main__":
+    main()
 
 
-# Write SUE values to CSV (most recent SUE per ticker)
-with open("sue_output.csv", "w", newline="") as f:
-    writer = csv.writer(f)
-    writer.writerow(["Ticker", "SUE"])
-    writer.writerows(results)
-
-print("CSV output written to sue_output.csv")
-print("Tickers with no data:", not_found)
