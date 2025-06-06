@@ -43,6 +43,3 @@ tickers = ["YPF","GGAL","BBAR","SUPV","PAM","TGS","TEO","IRS","CRESY","LOMA","BM
         "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TX","BK","GS","TRVV",
         "TJX", "USB", "UPST","WBO","WFC","AUY","YZCAY"
     ]
-
-
-etf_tickers = []

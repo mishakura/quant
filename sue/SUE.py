@@ -1,3 +1,7 @@
+# This algorithm need quality data, now its not working.
+
+
+
 import requests
 import pandas as pd
 import numpy as np
