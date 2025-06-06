@@ -132,7 +132,6 @@ def main():
             skewness_series = compute_rolling_skewness(data[ticker], window=window)
             skewness_dict[ticker] = skewness_series
             valid_count = skewness_series.notna().sum()
-            
         else:
             print(f"Warning: No data for {ticker}")
 
@@ -258,8 +257,7 @@ def main():
     print(result_df.sort_values('weight', ascending=False))
     
     # Output top 10% by positive rank
-    rank_90 = np.percentile(result_df['rank'], 90)
-    top_10p = result_df[result_df['rank'] >= rank_90]
+    top_10p = result_df[result_df['rank'] <= np.percentile(result_df['rank'], 10)]
     top_10p_file = 'skewness_top10p.csv'
     top_10p.to_csv(top_10p_file)
     print(f"\nTop 10% by positive rank saved to: {top_10p_file}")
