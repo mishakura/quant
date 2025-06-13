@@ -42,10 +42,13 @@ if not all_data:
 data = pd.concat(all_data.values(), axis=1, keys=all_data.keys())
 
 # Calculate daily returns
-returns = data.pct_change().dropna()
+returns = data.pct_change(fill_method=None).dropna()
 
 # Calculate standard deviation of returns for each ticker
 volatility = returns.std()
+
+# To annualize, add this line:
+volatility = volatility * (252 ** 0.5)  # Annualize using sqrt(252)
 
 # Select top 10 percentile of least volatile stocks
 threshold = volatility.quantile(0.1)

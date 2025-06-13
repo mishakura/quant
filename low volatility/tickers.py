@@ -39,7 +39,7 @@ tickers = ["YPF","GGAL","BBAR","SUPV","PAM","TGS","TEO","IRS","CRESY","LOMA","BM
           "VIST", "VIV", "VOD", "VRSN", "VZ", "WBA", "WB", "WEGE3.SA", "WMT", "X", "XOM", "XP", "XRX",
         "XYZ", "YELP", "ZM", "ADS","AEG","AXP","AIG","BBD","BBAS3.SA","BSBR","SAN","BAC","BCS","BAS","BAYN",
         "BBV","SCHW","C","ELP","CS","BSN","DTEA","EOAN","AKO-B","FNMA", "FMCC","GPRK","HDB","HHPD",
-        "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG","MUFG","NEC1.HM","NSAN",
+        "HSBC","IBN","ING","IFF","JPM","ITUB","JCI","KB","LYG","MBG.F","MUFG","NEC1.HM","NSAN",
         "NOKA","NMR","PSO","PKS","SMSN","SWKS","TTM","RCTB4.BA","TIIAY","TEFO","TX","BK","GS","TRVV",
         "TJX", "USB", "UPST","WBO","WFC","AUY","YZCAY"
     ]
