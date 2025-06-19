@@ -25,6 +25,24 @@ def organize(data, unit):
         d[(end, fp)] = item['val']
     return d
 
+def get_eps(records, period_end):
+    """
+    records: list of dicts with keys 'end', 'period', 'value'
+    period_end: string, e.g. '2024-03-31'
+    """
+    # Filter records for the given period end
+    period_records = [r for r in records if r['end'] == period_end]
+    # Try to get the first Q1 record
+    q1_records = [r for r in records if r['end'] == period_end and r['period'] == 'Q1']
+    if q1_records:
+        eps = q1_records[0]['value']  # Use the first Q1 record
+    elif fy_records := [r for r in records if r['end'] == period_end and r['period'] == 'FY']:
+        eps = fy_records[0]['value']
+        print("Warning: Using FY value for Q1 as exception.")
+    else:
+        eps = None
+    return eps  # No data found
+
 def main():
     eps_data = fetch_sec_data("EarningsPerShareBasic")
     net_income_data = fetch_sec_data("NetIncomeLoss")
@@ -143,6 +161,18 @@ def main():
     for end in sorted(quarter_eps.keys()):
         entry = quarter_eps[end]
         print(f"{end} | EPS: {entry['eps']:.4f} | {entry['source']}")
+
+    # Exception handling for Q1 EPS
+    for year in sorted(years):
+        q1_end = f"{year}-03-31"
+        if q1_end in quarter_eps:
+            continue  # Q1 EPS already calculated
+        fy_end = f"{year}-12-31"
+        if (fy_end, 'FY') in eps_dict:
+            # Use FY data for Q1, but flag it
+            eps = eps_dict[(fy_end, 'FY')]
+            quarter_eps[q1_end] = {'eps': eps / 4, 'source': 'Q1 from FY EPS split'}
+            print("Warning: Using FY EPS for Q1 as an exception.")
 
 if __name__ == "__main__":
     main()
