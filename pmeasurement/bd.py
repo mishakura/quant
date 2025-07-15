@@ -34,7 +34,7 @@ for col in pivot_df.columns:
     if col in ['FECHA', 'FX']:
         continue
     price_numeric = pd.to_numeric(pivot_df[col], errors='coerce')
-    if col in ['GLD', 'YPFD']:
+    if col in ['GLD', 'YPFD','AMD']:
         usd_data[col] = price_numeric / fx_numeric
     elif col.endswith('D') or col.endswith('C'):
         usd_data[col] = price_numeric
@@ -101,6 +101,13 @@ try:
                 else:
                     divisor = 1   # Anual o indefinido
                 cashflows['Interés'] = cashflows['Interés'] / divisor
+            # Ajustar cálculo de interés usando Residual (para bonos con amortización)
+            if 'Residual' in cashflows.columns:
+                residual_shifted = cashflows['Residual'].shift(1)
+                residual_shifted.iloc[0] = 100.0
+                cashflows['Residual_shifted'] = residual_shifted
+                # Calcular interés sobre el residual anterior
+                cashflows['Interés'] = cashflows['Interés'] * cashflows['Residual_shifted'] / 100.0
             # Ordenar cashflows por fecha de pago por si acaso
             cashflows = cashflows.sort_values('Fecha de pago')
             # Inicializar una columna auxiliar para la suma acumulada
