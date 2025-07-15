@@ -74,6 +74,7 @@ def get_accrued_interest(cashflows, date):
 
 try:
     rentas_xls = pd.ExcelFile('rentas.xlsx')
+    fechas = pd.to_datetime(usd_df['FECHA'])  # Convertir fechas a Timestamps
     for col in usd_df.columns:
         if col == 'FECHA':
             continue
@@ -81,11 +82,53 @@ try:
             cashflows = pd.read_excel(rentas_xls, sheet_name=col)
             # Limpiar símbolo % y convertir columna 'Interés' a numérico
             cashflows['Interés'] = cashflows['Interés'].astype(str).str.replace('%', '').str.replace(',', '.')
-            cashflows['Interés'] = pd.to_numeric(cashflows['Interés'], errors='coerce')
-            # Tomar el último cupón de la serie
-            cupon = cashflows['Interés'].dropna().iloc[-1] if not cashflows['Interés'].dropna().empty else 0.0
-            # Sumar el cupón una sola vez a toda la serie
-            usd_df[col] = usd_df[col] + cupon
+            cashflows['Interés'] = pd.to_numeric(cashflows['Interés'], errors='coerce').fillna(0)
+            # Ajustar intereses anualizados a la periodicidad detectada ANTES de la suma acumulada
+            if len(cashflows) > 1:
+                cashflows = cashflows.sort_values('Fecha de pago')
+                fechas_pago = pd.to_datetime(cashflows['Fecha de pago'])
+                diffs = fechas_pago.diff().dt.days.iloc[1:]
+                periodicidad_dias = diffs.mode().iloc[0] if not diffs.empty else 365
+                if 27 <= periodicidad_dias <= 32:
+                    divisor = 12  # Mensual
+                elif 85 <= periodicidad_dias <= 95:
+                    divisor = 4   # Trimestral
+                elif 170 <= periodicidad_dias <= 190:
+                    divisor = 2   # Semestral
+                else:
+                    divisor = 1   # Anual o indefinido
+                cashflows['Interés'] = cashflows['Interés'] / divisor
+            # Ordenar cashflows por fecha de pago por si acaso
+            cashflows = cashflows.sort_values('Fecha de pago')
+            # Inicializar una columna auxiliar para la suma acumulada
+            clean_prices = usd_df[col].copy()
+            # Crear una serie de fechas de pago menos 1 día (24hs antes)
+            cashflows['Fecha ajuste'] = pd.to_datetime(cashflows['Fecha de pago']) - pd.Timedelta(days=1)
+            # Ordenar por fecha de ajuste
+            cashflows = cashflows.sort_values('Fecha ajuste')
+            # Filtrar cashflows para solo incluir pagos a partir de la primera fecha de la serie
+            fecha_inicio = pd.to_datetime(usd_df['FECHA']).min()
+            cashflows = cashflows[cashflows['Fecha ajuste'] >= fecha_inicio]
+            # Calcular suma acumulada de intereses y amortizaciones
+            cashflows['Interés'] = cashflows['Interés'].fillna(0)
+            if 'Amortización' in cashflows.columns:
+                cashflows['Amortización'] = pd.to_numeric(cashflows['Amortización'].astype(str).str.replace('%', '').str.replace(',', '.'), errors='coerce').fillna(0)
+                cashflows['Amortización'] = cashflows['Amortización'] * 100  # Multiplicar por 100 según requerimiento
+                cashflows['Cumulative'] = cashflows['Interés'].cumsum() + cashflows['Amortización'].cumsum()
+            else:
+                cashflows['Cumulative'] = cashflows['Interés'].cumsum()
+            # Para cada fecha en el time series, sumar la suma acumulada de cupones y amortizaciones pagados hasta esa fecha
+            fechas = pd.to_datetime(usd_df['FECHA'])
+            cumulative_coupons = []
+            for f in fechas:
+                pagos_hasta_fecha = cashflows[cashflows['Fecha ajuste'] <= f]
+                if not pagos_hasta_fecha.empty:
+                    cumulative = pagos_hasta_fecha['Cumulative'].iloc[-1]
+                else:
+                    cumulative = 0.0
+                cumulative_coupons.append(cumulative)
+            clean_prices = clean_prices + cumulative_coupons
+            usd_df[col] = clean_prices
 except Exception as e:
     print('Error al procesar rentas.xlsx:', e)
 # Guardar el resultado en un nuevo archivo Excel
