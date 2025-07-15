@@ -2,6 +2,9 @@ import numpy as np
 import openpyxl
 import pandas as pd
 
+
+""""Chequear con Aux si el calculo de cupones está correcto, quizás los intereses
+deben ser calculados bajo el residual."""
 # Leer el archivo Excel
 input_file = 'bd_data.xlsx'
 df = pd.read_excel(input_file)
@@ -64,7 +67,7 @@ def get_accrued_interest(cashflows, date):
     if days_total == 0:
         return 0.0
     # Interés anual del próximo pago
-    interes_anual = next_payment['Interés'] / 100  # Convertir a decimal
+    interes_anual = next_payment['Interés'] # Convertir a decimal
     # Ajustar interés anual a la periodicidad
     interes_periodo = interes_anual * (days_total / 365)
     # Interés devengado proporcional
@@ -113,7 +116,7 @@ try:
             cashflows['Interés'] = cashflows['Interés'].fillna(0)
             if 'Amortización' in cashflows.columns:
                 cashflows['Amortización'] = pd.to_numeric(cashflows['Amortización'].astype(str).str.replace('%', '').str.replace(',', '.'), errors='coerce').fillna(0)
-                cashflows['Amortización'] = cashflows['Amortización'] * 100  # Multiplicar por 100 según requerimiento
+                cashflows['Amortización'] = cashflows['Amortización'] # Multiplicar por 100 según requerimiento
                 cashflows['Cumulative'] = cashflows['Interés'].cumsum() + cashflows['Amortización'].cumsum()
             else:
                 cashflows['Cumulative'] = cashflows['Interés'].cumsum()
@@ -131,10 +134,14 @@ try:
             usd_df[col] = clean_prices
 except Exception as e:
     print('Error al procesar rentas.xlsx:', e)
-# Guardar el resultado en un nuevo archivo Excel
-
-# Guardar el resultado en un nuevo archivo Excel con dos hojas: original y USD
+# Calcular retornos diarios de la hoja USD
+usd_returns = usd_df.copy()
+for col in usd_returns.columns:
+    if col != 'FECHA':
+        usd_returns[col] = usd_returns[col].pct_change()
+# Guardar el resultado en un nuevo archivo Excel con tres hojas: original, USD y retornos diarios
 output_file = 'bd_data_merged.xlsx'
 with pd.ExcelWriter(output_file) as writer:
     pivot_df.to_excel(writer, index=False, sheet_name='Original')
     usd_df.to_excel(writer, index=False, sheet_name='USD')
+    usd_returns.to_excel(writer, index=False, sheet_name='USD_RETURNS')
