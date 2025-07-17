@@ -19,6 +19,12 @@ pivot_df = df.pivot_table(index='FECHA', columns='SIMBOLO', values='CIERRE', agg
 # Resetear el índice para que FECHA sea una columna
 pivot_df = pivot_df.reset_index()
 
+
+# Remove the row with date '2025-06-05' from all DataFrames before further processing
+date_to_remove = '2025-06-05'
+if 'FECHA' in pivot_df.columns:
+    pivot_df = pivot_df[pivot_df['FECHA'] != date_to_remove]
+
 # Crear el nuevo activo FX = AL30 / AL30D
 if 'AL30' in pivot_df.columns and 'AL30D' in pivot_df.columns:
     pivot_df['FX'] = pivot_df['AL30'] / pivot_df['AL30D']
@@ -40,7 +46,11 @@ for col in pivot_df.columns:
         usd_data[col] = price_numeric
     else:
         usd_data[col] = price_numeric / fx_numeric
+
 usd_df = pd.DataFrame(usd_data)
+# Remove the row with date '2025-06-05' from usd_df
+if 'FECHA' in usd_df.columns:
+    usd_df = usd_df[usd_df['FECHA'] != date_to_remove]
 
 # Multiplicar cada columna por su ratio si está en ticker_ratio
 for col in usd_df.columns:
@@ -83,66 +93,95 @@ try:
             continue
         if col in rentas_xls.sheet_names:
             cashflows = pd.read_excel(rentas_xls, sheet_name=col)
-            # Limpiar símbolo % y convertir columna 'Interés' a numérico
-            cashflows['Interés'] = cashflows['Interés'].astype(str).str.replace('%', '').str.replace(',', '.')
-            cashflows['Interés'] = pd.to_numeric(cashflows['Interés'], errors='coerce').fillna(0)
-            # Ajustar intereses anualizados a la periodicidad detectada ANTES de la suma acumulada
-            if len(cashflows) > 1:
-                cashflows = cashflows.sort_values('Fecha de pago')
-                fechas_pago = pd.to_datetime(cashflows['Fecha de pago'])
-                diffs = fechas_pago.diff().dt.days.iloc[1:]
-                periodicidad_dias = diffs.mode().iloc[0] if not diffs.empty else 365
-                if 27 <= periodicidad_dias <= 32:
-                    divisor = 12  # Mensual
-                elif 85 <= periodicidad_dias <= 95:
-                    divisor = 4   # Trimestral
-                elif 170 <= periodicidad_dias <= 190:
-                    divisor = 2   # Semestral
-                else:
-                    divisor = 1   # Anual o indefinido
-                cashflows['Interés'] = cashflows['Interés'] / divisor
-            # Ajustar cálculo de interés usando Residual (para bonos con amortización)
-            if 'Residual' in cashflows.columns:
-                residual_shifted = cashflows['Residual'].shift(1)
-                residual_shifted.iloc[0] = 100.0
-                cashflows['Residual_shifted'] = residual_shifted
-                # Calcular interés sobre el residual anterior
-                cashflows['Interés'] = cashflows['Interés'] * cashflows['Residual_shifted'] / 100.0
-            # Ordenar cashflows por fecha de pago por si acaso
-            cashflows = cashflows.sort_values('Fecha de pago')
-            # Inicializar una columna auxiliar para la suma acumulada
-            clean_prices = usd_df[col].copy()
-            # Crear una serie de fechas de pago menos 1 día (24hs antes)
-            cashflows['Fecha ajuste'] = pd.to_datetime(cashflows['Fecha de pago']) - pd.Timedelta(days=1)
-            # Ordenar por fecha de ajuste
-            cashflows = cashflows.sort_values('Fecha ajuste')
-            # Filtrar cashflows para solo incluir pagos a partir de la primera fecha de la serie
-            fecha_inicio = pd.to_datetime(usd_df['FECHA']).min()
-            cashflows = cashflows[cashflows['Fecha ajuste'] >= fecha_inicio]
-            # Calcular suma acumulada de intereses y amortizaciones
-            cashflows['Interés'] = cashflows['Interés'].fillna(0)
-            if 'Amortización' in cashflows.columns:
-                cashflows['Amortización'] = pd.to_numeric(cashflows['Amortización'].astype(str).str.replace('%', '').str.replace(',', '.'), errors='coerce').fillna(0)
-                cashflows['Amortización'] = cashflows['Amortización'] # Multiplicar por 100 según requerimiento
-                cashflows['Cumulative'] = cashflows['Interés'].cumsum() + cashflows['Amortización'].cumsum()
+            if col == 'TX26':
+                # Special handling for TX26: only 'Fecha de pago' and 'Total' columns
+                # Convert 'Fecha de pago' to datetime and 'Total' to numeric
+                cashflows['Fecha de pago'] = pd.to_datetime(cashflows['Fecha de pago'])
+                cashflows['Total'] = pd.to_numeric(cashflows['Total'], errors='coerce').fillna(0)
+                # Calculate 'Fecha ajuste' (24h before)
+                cashflows['Fecha ajuste'] = cashflows['Fecha de pago'] - pd.Timedelta(days=1)
+                # Use FX from the 'Original' sheet (pivot_df) for conversion
+                fx_series_orig = pd.Series(data=pivot_df['FX'].values, index=pd.to_datetime(pivot_df['FECHA'])) if 'FX' in pivot_df.columns else None
+                # Prepare a Series to accumulate the USD payments
+                tx26_usd_payments = pd.Series(0.0, index=pd.to_datetime(usd_df['FECHA']))
+                for _, row in cashflows.iterrows():
+                    fecha_ajuste = row['Fecha ajuste']
+                    total = row['Total']
+                    fx = fx_series_orig.loc[fecha_ajuste] if fx_series_orig is not None and fecha_ajuste in fx_series_orig.index else 1.0
+                    usd_payment = total / fx if fx != 0 else 0.0
+                    # Add the payment to the correct date
+                    if fecha_ajuste in tx26_usd_payments.index:
+                        tx26_usd_payments.loc[fecha_ajuste] += usd_payment
+                # Cumulative sum of USD payments
+                tx26_cumulative = tx26_usd_payments.cumsum()
+                # Add to the TX26 price series
+                clean_prices = usd_df[col].copy()
+                clean_prices = clean_prices + tx26_cumulative.values
+                usd_df[col] = clean_prices
             else:
-                cashflows['Cumulative'] = cashflows['Interés'].cumsum()
-            # Para cada fecha en el time series, sumar la suma acumulada de cupones y amortizaciones pagados hasta esa fecha
-            fechas = pd.to_datetime(usd_df['FECHA'])
-            cumulative_coupons = []
-            for f in fechas:
-                pagos_hasta_fecha = cashflows[cashflows['Fecha ajuste'] <= f]
-                if not pagos_hasta_fecha.empty:
-                    cumulative = pagos_hasta_fecha['Cumulative'].iloc[-1]
+                # Limpiar símbolo % y convertir columna 'Interés' a numérico
+                cashflows['Interés'] = cashflows['Interés'].astype(str).str.replace('%', '').str.replace(',', '.')
+                cashflows['Interés'] = pd.to_numeric(cashflows['Interés'], errors='coerce').fillna(0)
+                # Ajustar intereses anualizados a la periodicidad detectada ANTES de la suma acumulada
+                if len(cashflows) > 1:
+                    cashflows = cashflows.sort_values('Fecha de pago')
+                    fechas_pago = pd.to_datetime(cashflows['Fecha de pago'])
+                    diffs = fechas_pago.diff().dt.days.iloc[1:]
+                    periodicidad_dias = diffs.mode().iloc[0] if not diffs.empty else 365
+                    if 27 <= periodicidad_dias <= 32:
+                        divisor = 12  # Mensual
+                    elif 85 <= periodicidad_dias <= 95:
+                        divisor = 4   # Trimestral
+                    elif 170 <= periodicidad_dias <= 190:
+                        divisor = 2   # Semestral
+                    else:
+                        divisor = 1   # Anual o indefinido
+                    cashflows['Interés'] = cashflows['Interés'] / divisor
+                # Ajustar cálculo de interés usando Residual (para bonos con amortización)
+                if 'Residual' in cashflows.columns:
+                    residual_shifted = cashflows['Residual'].shift(1)
+                    residual_shifted.iloc[0] = 100.0
+                    cashflows['Residual_shifted'] = residual_shifted
+                    # Calcular interés sobre el residual anterior
+                    cashflows['Interés'] = cashflows['Interés'] * cashflows['Residual_shifted'] / 100.0
+                # Ordenar cashflows por fecha de pago por si acaso
+                cashflows = cashflows.sort_values('Fecha de pago')
+                # Inicializar una columna auxiliar para la suma acumulada
+                clean_prices = usd_df[col].copy()
+                # Crear una serie de fechas de pago menos 1 día (24hs antes)
+                cashflows['Fecha ajuste'] = pd.to_datetime(cashflows['Fecha de pago']) - pd.Timedelta(days=1)
+                # Ordenar por fecha de ajuste
+                cashflows = cashflows.sort_values('Fecha ajuste')
+                # Filtrar cashflows para solo incluir pagos a partir de la primera fecha de la serie
+                fecha_inicio = pd.to_datetime(usd_df['FECHA']).min()
+                cashflows = cashflows[cashflows['Fecha ajuste'] >= fecha_inicio]
+                # Calcular suma acumulada de intereses y amortizaciones
+                cashflows['Interés'] = cashflows['Interés'].fillna(0)
+                if 'Amortización' in cashflows.columns:
+                    cashflows['Amortización'] = pd.to_numeric(cashflows['Amortización'].astype(str).str.replace('%', '').str.replace(',', '.'), errors='coerce').fillna(0)
+                    cashflows['Amortización'] = cashflows['Amortización'] # Multiplicar por 100 según requerimiento
+                    cashflows['Cumulative'] = cashflows['Interés'].cumsum() + cashflows['Amortización'].cumsum()
                 else:
-                    cumulative = 0.0
-                cumulative_coupons.append(cumulative)
-            clean_prices = clean_prices + cumulative_coupons
-            usd_df[col] = clean_prices
+                    cashflows['Cumulative'] = cashflows['Interés'].cumsum()
+                # Para cada fecha en el time series, sumar la suma acumulada de cupones y amortizaciones pagados hasta esa fecha
+                fechas = pd.to_datetime(usd_df['FECHA'])
+                cumulative_coupons = []
+                for f in fechas:
+                    pagos_hasta_fecha = cashflows[cashflows['Fecha ajuste'] <= f]
+                    if not pagos_hasta_fecha.empty:
+                        cumulative = pagos_hasta_fecha['Cumulative'].iloc[-1]
+                    else:
+                        cumulative = 0.0
+                    cumulative_coupons.append(cumulative)
+                clean_prices = clean_prices + cumulative_coupons
+                usd_df[col] = clean_prices
 except Exception as e:
     print('Error al procesar rentas.xlsx:', e)
 # Calcular retornos diarios de la hoja USD
 usd_returns = usd_df.copy()
+# Remove the row with date '2025-06-05' from usd_returns (should already be removed, but for safety)
+if 'FECHA' in usd_returns.columns:
+    usd_returns = usd_returns[usd_returns['FECHA'] != date_to_remove]
 for col in usd_returns.columns:
     if col != 'FECHA':
         usd_returns[col] = usd_returns[col].pct_change()
