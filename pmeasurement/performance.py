@@ -23,11 +23,29 @@ def main():
             if (weights[col] > 0).any():
                 assets_with_weight.add(col)
 
+
     # Read returns
     returns = pd.read_excel(RETURNS_FILE, sheet_name=RETURNS_SHEET)
     returns.set_index('FECHA', inplace=True)
 
-    # Calculate YTD return for each asset
+    # --- Trim data to last available quarter-end ---
+    # Find the last date that is a quarter-end (March 31, June 30, Sept 30, Dec 31)
+    def is_quarter_end(date):
+        if isinstance(date, str):
+            date = pd.to_datetime(date)
+        return (date.month, date.day) in [(3,31), (6,30), (9,30), (12,31)]
+
+    # Ensure index is datetime
+    returns.index = pd.to_datetime(returns.index)
+    # Find all quarter-end dates in the index
+    quarter_ends = [d for d in returns.index if is_quarter_end(d)]
+    if not quarter_ends:
+        raise ValueError("No quarter-end dates found in returns index.")
+    last_quarter_end = max(quarter_ends)
+    # Only use data up to and including last_quarter_end
+    returns = returns.loc[returns.index <= last_quarter_end]
+
+    # Calculate YTD return for each asset (using trimmed data)
     asset_ytd = {}
     for asset in assets_with_weight:
         if asset in returns.columns:
@@ -48,6 +66,9 @@ def main():
                 break
         if not date_col:
             continue
+        weights[date_col] = pd.to_datetime(weights[date_col])
+        # Only use weights up to last_quarter_end
+        weights = weights[weights[date_col] <= last_quarter_end]
         weights.set_index(date_col, inplace=True)
         # Align columns and index
         common_assets = weights.columns.intersection(returns.columns)
