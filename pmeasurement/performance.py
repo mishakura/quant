@@ -1,4 +1,3 @@
-
 import pandas as pd
 import os
 
@@ -9,8 +8,12 @@ RETURNS_SHEET = 'USD_RETURNS'
 PORTFOLIO_RETURNS_SHEET = 'PORTFOLIO_RETURNS'
 
 def main():
-    # Read all portfolios (all sheets) from weights.xlsx
     weights_xls = pd.ExcelFile(WEIGHTS_FILE)
+
+    # --- Load full returns data (for YTD Full and Last 5 Days Return) ---
+    returns_full = pd.read_excel(RETURNS_FILE, sheet_name=RETURNS_SHEET)
+    returns_full.set_index('FECHA', inplace=True)
+    returns_full.index = pd.to_datetime(returns_full.index)
 
     # --- Compute YTD return per asset with weight > 0 in any portfolio ---
     # Find all assets with weight > 0 in any portfolio
@@ -24,9 +27,8 @@ def main():
                 assets_with_weight.add(col)
 
 
-    # Read returns
-    returns = pd.read_excel(RETURNS_FILE, sheet_name=RETURNS_SHEET)
-    returns.set_index('FECHA', inplace=True)
+    # Read returns (for quarter-end trimmed calculations)
+    returns = returns_full.copy()
 
     # --- Trim data to last available quarter-end ---
     # Find the last date that is a quarter-end (March 31, June 30, Sept 30, Dec 31)
@@ -97,8 +99,28 @@ def main():
     for portfolio in list(portfolio_returns.columns) + ['SPY']:
         if portfolio == 'SPY':
             ret = spy_returns
+            ret_full = returns_full['SPY'] if 'SPY' in returns_full.columns else pd.Series(dtype=float)
         else:
             ret = portfolio_returns[portfolio]
+            # Recalculate the full portfolio return using all dates in returns_full
+            # Align weights to returns_full
+            weights = pd.read_excel(WEIGHTS_FILE, sheet_name=portfolio)
+            date_col = None
+            for col in weights.columns:
+                if isinstance(col, str) and col.strip().lower() == 'fecha':
+                    date_col = col
+                    break
+            if date_col:
+                weights[date_col] = pd.to_datetime(weights[date_col])
+                weights.set_index(date_col, inplace=True)
+                # Use all available dates up to today
+                common_assets = weights.columns.intersection(returns_full.columns)
+                aligned_weights = weights[common_assets].reindex(index=returns_full.index).fillna(0)
+                aligned_returns = returns_full[common_assets].reindex(index=returns_full.index).fillna(0)
+                ret_full = (aligned_weights * aligned_returns).sum(axis=1)
+            else:
+                ret_full = pd.Series(dtype=float)
+
         ret_clean = ret.dropna()
         # Q2 2025 Return
         q2_start = '2025-04-01'
@@ -114,6 +136,19 @@ def main():
         ytd = (1 + ret_clean).prod() - 1 if n > 0 else float('nan')
         # Annualized YTD
         ytd_ann = (1 + ytd) ** (252 / n) - 1 if n > 0 else float('nan')
+        # --- YTD (Full): Use all available data up to today ---
+        ret_full_clean = ret_full.dropna()
+        n_full = ret_full_clean.shape[0]
+        ytd_full = (1 + ret_full_clean).prod() - 1 if n_full > 0 else float('nan')
+        # --- Last 5 Days Return ---
+        if n_full >= 5:
+            last5 = ret_full_clean.iloc[-5:]
+            last5_return = (1 + last5).prod() - 1
+        elif n_full > 0:
+            last5 = ret_full_clean
+            last5_return = (1 + last5).prod() - 1
+        else:
+            last5_return = float('nan')
         # Max Drawdown
         cumulative = (1 + ret_clean).cumprod()
         running_max = cumulative.cummax()
@@ -173,6 +208,8 @@ def main():
             'Volatility (daily)': vol_daily,
             'YTD': ytd,
             'YTD (annualized)': ytd_ann,
+            'YTD (Full)': ytd_full,                  # <--- NEW
+            'Last 5 Days Return': last5_return,      # <--- NEW
             'YTD - SPY': ytd_minus_spy,
             'Q2 2025 Return': q2_return,
             'Max Drawdown': max_drawdown,
