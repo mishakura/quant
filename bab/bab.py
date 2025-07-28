@@ -1,33 +1,44 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from tickers import tickers
+from datetime import datetime, timedelta
 
-# Download monthly adjusted close prices for SPY (market) for the last 5 years
-spy = yf.download('SPY', period='5y', interval='1mo', auto_adjust=True)
-spy['Return'] = spy['Close'].pct_change()
-market_ret = spy['Return']
-results = []
-for ticker in tickers:
-    try:
-        data = yf.download(ticker, period='5y', interval='1mo', auto_adjust=True)
-        data['Return'] = data['Close'].pct_change()
-        asset_ret = data['Return']
-        # Align dates
-        aligned = pd.DataFrame({'asset': asset_ret, 'market': market_ret}).dropna()
-        if len(aligned) < 12:
-            continue  # skip if not enough data
-        cov = np.cov(aligned['asset'], aligned['market'])[0][1]
-        var = np.var(aligned['market'])
-        beta = cov / var if var != 0 else np.nan
-        results.append({'Asset': ticker, 'Beta': beta})
-    except Exception as e:
-        results.append({'Asset': ticker, 'Beta': np.nan})
+# Parameters
+tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'JPM', 'UNH', 'V']  # Example tickers
+market = '^GSPC'  # S&P 500 as market proxy
+today = datetime.today()
+one_year_ago = today - timedelta(days=365)
+five_years_ago = today - timedelta(days=5*365)
 
-output_df = pd.DataFrame(results)
-output_df = output_df.dropna(subset=['Beta'])
-output_df['ReverseRank'] = output_df['Beta'].rank(ascending=True, method='min')
-output_df = output_df.sort_values('ReverseRank')
-output_df.to_excel('bab_betas.xlsx', index=False)
-print('BAB betas and reverse rank saved to bab_betas.xlsx:')
-print(output_df)
+# Download data
+raw_data = yf.download(tickers + [market], start=five_years_ago.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
+data = raw_data.xs('Adj Close', axis=1, level=1)
+
+# Calculate daily log returns (for volatility, 1 year)
+daily_returns = np.log(data / data.shift(1))
+daily_returns_1y = daily_returns.loc[one_year_ago:]
+
+# Calculate 3-day log returns (for correlation, 5 years)
+returns_3d = np.log(data / data.shift(3))
+returns_3d_5y = returns_3d.loc[five_years_ago:]
+
+# Volatility (std of daily returns over 1 year)
+volatility = daily_returns_1y[tickers].std()
+
+# Correlation (3-day returns over 5 years, shrinkage towards 0)
+corr_matrix = returns_3d_5y[tickers + [market]].corr()
+shrinkage = 0.1  # Shrink correlations 10% towards zero
+corr_with_market = corr_matrix.loc[tickers, market] * (1 - shrinkage)
+
+# Beta = corr(stock, market) * (vol(stock)/vol(market))
+vol_market = daily_returns_1y[market].std()
+beta = corr_with_market * (volatility / vol_market)
+
+# Rank stocks by beta (low to high)
+ranking = beta.sort_values().reset_index()
+ranking.columns = ['Ticker', 'Beta']
+ranking['Rank'] = ranking['Beta'].rank(method='min')
+
+# Output to Excel
+ranking.to_excel('bab_beta_ranking.xlsx', index=False)
+print("Excel file 'bab_beta_ranking.xlsx' created with beta rankings.")
