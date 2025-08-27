@@ -14,8 +14,7 @@ end = '2025-12-30'
 
 # Tickers of assets
 assets = [
-    'CEMB', 'EMB', 'EMLC', 'GLD', 'SLV', 'USO', 'VEA', 'IWM','EWZ',
-    'IEMG', 'YPF','BTC-USD','FXI','GDX','IBB','ETH-USD','IJH','XLB','XLC','XLI','XLK','XLP','XLRE','XLV','XLY'
+"VEA","IJH","IWM","IEMG","ARGT","BTC-USD","VFMF"
 ]
 assets.sort()
 
@@ -27,7 +26,28 @@ data.columns = assets
 # Calculating returns
 Y = data[assets].pct_change().dropna()
 
-# Target annualized volatilities
+# --- Scale VFMF to target annualized volatility and mean return FIRST ---
+target_vfmf_vol = 15.77 / 100  # Convert percent to decimal
+target_vfmf_mean = 9.54 / 100  # Convert percent to decimal
+
+if 'VFMF' in Y.columns:
+    # Scale volatility
+    current_vfmf_vol = Y['VFMF'].std() * np.sqrt(252)
+    scaling_factor_vol = target_vfmf_vol / current_vfmf_vol
+    Y['VFMF'] = Y['VFMF'] * scaling_factor_vol
+
+    # Adjust mean return
+    current_vfmf_mean = Y['VFMF'].mean() * 252
+    mean_shift = target_vfmf_mean - current_vfmf_mean
+    daily_shift = mean_shift / 252
+    Y['VFMF'] = Y['VFMF'] + daily_shift
+
+    # Print confirmation
+    print("\nVFMF after scaling:")
+    print(f"Annualized volatility: {Y['VFMF'].std() * np.sqrt(252):.2%}")
+    print(f"Annualized mean return: {Y['VFMF'].mean() * 252:.2%}")
+
+# Target annualized volatilities for other assets
 target_vols = {
     'EMLC': 0.56,
     'EMB': 0.21,
@@ -91,7 +111,31 @@ w = port.optimization(model=model,
 print("\nOptimal HERC Portfolio Weights:")
 print(w)
 
+# Calculate expected portfolio return and risk
+weights = w.values.flatten()
+mean_returns = Y.mean() * 252  # Annualized mean returns
+cov_matrix = Y.cov() * 252     # Annualized covariance matrix
+
+# Expected portfolio return
+portfolio_return = np.dot(weights, mean_returns)
+
+# Expected portfolio risk (standard deviation)
+portfolio_risk = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+
+print(f"\nExpected annualized portfolio return: {portfolio_return:.2%}")
+print(f"Expected annualized portfolio risk (std): {portfolio_risk:.2%}")
+
 # Output weights to Excel
 w.to_excel("herc_portfolio_weights.xlsx")
 print("\nWeights saved to herc_weights.xlsx")
+
+print("\nEarliest available date for each asset:")
+for asset in assets:
+    print(f"{asset}: {data[asset].first_valid_index()}")
+
+# Print the annualized mean return of each asset
+print("\nAnnualized mean return for each asset:")
+for asset in Y.columns:
+    mean_ret = Y[asset].mean() * 252
+    print(f"{asset}: {mean_ret:.2%}")
 
