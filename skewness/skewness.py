@@ -82,7 +82,7 @@ def main():
     # Fix the date range - use current date as end date
     from datetime import datetime, timedelta
     
-    end = '2025-08-01'  # Today's date
+    end = '2025-09-01'  # Today's date
     start = '2022-01-01'  # Go back further to ensure enough history
     window = 252  # Approx 12 months of trading days
     

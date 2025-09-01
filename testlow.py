@@ -2,7 +2,7 @@ import yfinance as yf
 import pandas as pd
 
 # Download all available historical data for ARGT
-ticker = "ARGT"
+ticker = "MBG"
 data = yf.download(ticker, progress=False)
 
 # Use 'Close' for return calculations (auto_adjust=True by default)
