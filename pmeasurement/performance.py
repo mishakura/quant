@@ -56,7 +56,7 @@ def main():
             ytd = (1 + asset_ret).prod() - 1 if n > 0 else float('nan')
             asset_ytd[asset] = ytd
     asset_ytd_df = pd.DataFrame(list(asset_ytd.items()), columns=['Asset', 'YTD'])
-    portfolio_returns = pd.DataFrame(index=returns.index)
+    portfolio_returns = pd.DataFrame(index=returns_full.index)
 
     for sheet in weights_xls.sheet_names:
         weights = pd.read_excel(WEIGHTS_FILE, sheet_name=sheet)
@@ -69,13 +69,11 @@ def main():
         if not date_col:
             continue
         weights[date_col] = pd.to_datetime(weights[date_col])
-        # Only use weights up to last_quarter_end
-        weights = weights[weights[date_col] <= last_quarter_end]
         weights.set_index(date_col, inplace=True)
         # Align columns and index
-        common_assets = weights.columns.intersection(returns.columns)
-        aligned_weights = weights[common_assets].reindex(index=returns.index).fillna(0)
-        aligned_returns = returns[common_assets].reindex(index=returns.index).fillna(0)
+        common_assets = weights.columns.intersection(returns_full.columns)
+        aligned_weights = weights[common_assets].reindex(index=returns_full.index).fillna(0)
+        aligned_returns = returns_full[common_assets].reindex(index=returns_full.index).fillna(0)
         # Calculate daily portfolio return
         daily_ret = (aligned_weights * aligned_returns).sum(axis=1)
         portfolio_returns[sheet] = daily_ret
