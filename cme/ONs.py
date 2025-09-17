@@ -4,3 +4,5 @@
 ## Computar la desviación estándar de cada serie
 ## Computar el promedio de todas las series de desviación estándar.
 ## Calcular retorno promedio también.
+
+##IRCFD,YMCHD, MGC9D, YMCID , ADCO27, BACAD, TLC1D, MGC1D,
