@@ -5,4 +5,12 @@
 ## Computar el promedio de todas las series de desviación estándar.
 ## Calcular retorno promedio también.
 
-##IRCFD,YMCHD, MGC9D, YMCID , ADCO27, BACAD, TLC1D, MGC1D,
+## YMCID, TLC1D,YCA6O, YCAMO. BYC2D
+
+
+##Datos de , BYC2D, YCA6O e YCAMO desde 2017 hasta 2022 (5 años)
+#TLC1D desde 2019 hasta 2025 (6 años)
+##
+## Luego hay que usar otros datos.
+
+
