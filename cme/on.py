@@ -177,6 +177,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     indice_df = pd.DataFrame({'Indice': indice})
 
 
+
     with pd.ExcelWriter(output_file) as writer:
         clean_df.to_excel(writer, sheet_name='clean')
         pagos_df.to_excel(writer, sheet_name='pagos_aplicados')
