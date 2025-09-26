@@ -191,7 +191,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     start_date = '2015-01-01'
     end_date = indice.index.max().strftime('%Y-%m-%d')
     spy_df = yf.download('SPY', start=start_date, end=end_date)
-    cemb_df = yf.download('CEMB', start=start_date, end=end_date)
+    cemb_df = yf.download('EMB', start=start_date, end=end_date)
     spy = spy_df['Close'].squeeze()
     cemb = cemb_df['Close'].squeeze()
 
@@ -199,7 +199,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     df_compare = pd.concat([
         indice.rename('Indice'),
         spy.rename('SPY'),
-        cemb.rename('CEMB')
+        cemb.rename('EMB')
     ], axis=1).dropna()
 
     # Calcular retornos diarios
@@ -210,13 +210,13 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     var_spy = np.var(retornos['SPY'])
     beta_spy = cov_spy / var_spy if var_spy != 0 else np.nan
 
-    cov_cemb = np.cov(retornos['Indice'], retornos['CEMB'])[0, 1]
-    var_cemb = np.var(retornos['CEMB'])
+    cov_cemb = np.cov(retornos['Indice'], retornos['EMB'])[0, 1]
+    var_cemb = np.var(retornos['EMB'])
     beta_cemb = cov_cemb / var_cemb if var_cemb != 0 else np.nan
 
     # Guardar resultados en DataFrame
     beta_df = pd.DataFrame({
-        'Activo': ['SPY', 'CEMB'],
+        'Activo': ['SPY', 'EMB'],
         'Beta vs Indice': [beta_spy, beta_cemb]
     })
 
@@ -231,4 +231,4 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     print(f"Precios clean exportados a {output_file}")
 
 # Ejemplo de uso:
-clean_bond_prices('on_precios.xlsx', 'on_cashflows.xlsx')
+clean_bond_prices('bonares_precio.xlsx', 'bonares_cashflows.xlsx')
