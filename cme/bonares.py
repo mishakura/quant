@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 
 
-def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
+def clean_bond_prices(precios_file, cashflows_file, output_file='bonares_cme.xlsx'):
     precios_xls = pd.ExcelFile(precios_file)
     cashflows_xls = pd.ExcelFile(cashflows_file)
     activos = precios_xls.sheet_names
@@ -60,6 +60,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
             df_cf['Interés'] = df_cf['Interés'] / divisor
         # Si hay columna Residual, calcular interés sobre el residual anterior
         if 'Residual' in df_cf.columns:
+            df_cf['Residual'] = pd.to_numeric(df_cf['Residual'], errors='coerce').fillna(0)
             residual_shifted = df_cf['Residual'].shift(1)
             residual_shifted.iloc[0] = 100.0  # O el nominal de tu bono
             df_cf['Residual_shifted'] = residual_shifted
@@ -231,4 +232,4 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     print(f"Precios clean exportados a {output_file}")
 
 # Ejemplo de uso:
-clean_bond_prices('bonares_precio.xlsx', 'bonares_cashflows.xlsx')
+clean_bond_prices('bonares_precios.xlsx', 'bonares_cashflows.xlsx')
