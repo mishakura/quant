@@ -2,9 +2,27 @@ import pandas as pd
 import numpy as np
 
 
-def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
+def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_file='tasa_cme.xlsx'):
     precios_xls = pd.ExcelFile(precios_file)
     cashflows_xls = pd.ExcelFile(cashflows_file)
+    mep_df = pd.read_excel(mep_file, sheet_name='mep')
+    # Buscar columna de fecha y dólar (case-insensitive)
+    fecha_mep_col = next((col for col in mep_df.columns if col.strip().lower() in ['fecha', 'date']), None)
+    if fecha_mep_col is None:
+        raise ValueError(f"No se encontró columna de fecha en mep.xlsx. Columnas disponibles: {list(mep_df.columns)}")
+
+    # Buscar columna de dólar MEP (más flexible)
+    dolar_mep_col = next(
+        (col for col in mep_df.columns if any(x in col.strip().lower() for x in ['dólar', 'dolar', 'usd', 'mep', 'precio'])),
+        None
+    )
+    if dolar_mep_col is None:
+        raise ValueError(f"No se encontró columna de dólar MEP en mep.xlsx. Columnas disponibles: {list(mep_df.columns)}")
+    
+    mep_df[fecha_mep_col] = pd.to_datetime(mep_df[fecha_mep_col])
+    mep_df = mep_df.sort_values(fecha_mep_col)
+    mep_series = mep_df.set_index(fecha_mep_col)[dolar_mep_col].copy()
+
     activos = precios_xls.sheet_names
     clean_dict = {}
     pagos_dict = {}
@@ -12,31 +30,41 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     for activo in activos:
         # Leer precios
         df_precios = pd.read_excel(precios_file, sheet_name=activo)
-        # Buscar columna de fecha (case-insensitive)
         fecha_col = [col for col in df_precios.columns if col.strip().lower() in ['fecha', 'date']][0]
         precio_col = [col for col in df_precios.columns if col.strip().lower() in ['precio', 'close', 'cierre']][0]
         df_precios[fecha_col] = pd.to_datetime(df_precios[fecha_col])
         df_precios = df_precios.sort_values(fecha_col)
-        # Eliminar fechas duplicadas, quedándote con el último precio de cada fecha
         df_precios = df_precios.drop_duplicates(subset=fecha_col, keep='last')
         precios = df_precios.set_index(fecha_col)[precio_col].copy()
 
+        # --- Convertir precios de pesos a dólares usando dólar MEP ---
+        precios = precios.loc[precios.index >= mep_series.index.min()]  # Recortar fechas antes del primer dato MEP
+        precios_usd = precios.divide(mep_series, fill_value=np.nan)
+        precios = precios_usd.dropna()  # Solo fechas donde hay dato de dólar MEP
+
         # Leer cash flows
-        df_cf = pd.read_excel(cashflows_file, sheet_name=activo)
-        # Buscar columna de fecha de pago (case-insensitive)
+        try:
+            df_cf = pd.read_excel(cashflows_file, sheet_name=activo)
+        except ValueError:
+            # No hay cash flow: solo guardar precios en USD
+            clean_dict[activo] = pd.Series(precios.values, index=precios.index, name=activo)
+            pagos_dict[activo] = pd.Series([0.0]*len(precios), index=precios.index, name=activo)
+            continue
+
         posibles_fechas = ['fecha de pago', 'fecha', 'payment date']
         fecha_pago_cols = [col for col in df_cf.columns if col.strip().lower() in posibles_fechas]
         if not fecha_pago_cols:
-            print(f"[ERROR] No se encontró columna de fecha de pago en la hoja '{activo}'. Columnas disponibles: {list(df_cf.columns)}")
-            continue  # Salta este activo y sigue con el resto
-        fecha_pago_col = fecha_pago_cols[0]
-
-        # Convertir a datetime, eliminar filas donde la conversión falló
-        df_cf[fecha_pago_col] = pd.to_datetime(df_cf[fecha_pago_col], errors='coerce', dayfirst=True)
-        df_cf = df_cf[df_cf[fecha_pago_col].notnull()]
-        if df_cf.empty:
-            print(f"[{activo}] No quedan filas válidas después de limpiar fechas. Se omite este activo.")
+            # No hay cash flow: solo guardar precios en USD
+            clean_dict[activo] = pd.Series(precios.values, index=precios.index, name=activo)
+            pagos_dict[activo] = pd.Series([0.0]*len(precios), index=precios.index, name=activo)
             continue
+        fecha_pago_col = fecha_pago_cols[0]  # <-- Mueve esta línea aquí
+        if df_cf.empty:
+            # No hay cash flow válido: solo guardar precios en USD
+            clean_dict[activo] = pd.Series(precios.values, index=precios.index, name=activo)
+            pagos_dict[activo] = pd.Series([0.0]*len(precios), index=precios.index, name=activo)
+            continue
+
         df_cf = df_cf.sort_values(fecha_pago_col)
         # Convertir columnas a numérico plano
         df_cf['Interés'] = pd.to_numeric(df_cf['Interés'], errors='coerce').fillna(0)
@@ -80,13 +108,24 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
         # Suma acumulada de cupones y amortizaciones
         df_cf['Cumulative'] = (df_cf['Interés'] + df_cf['Amortización']).cumsum()
 
-        # Para cada fecha de precios, sumar los pagos acumulados hasta esa fecha
+        # Suma acumulada de cupones y amortizaciones EN USD
+        df_cf['Cumulative_usd'] = 0.0
+        for i, row in df_cf.iterrows():
+            fecha_ajuste = row['Fecha ajuste']
+            dolar_mep_pago = mep_series.asof(fecha_ajuste) if fecha_ajuste >= mep_series.index.min() else np.nan
+            pago_pesos = row['Interés'] + row['Amortización']
+            pago_usd = pago_pesos / dolar_mep_pago if dolar_mep_pago and not np.isnan(dolar_mep_pago) else np.nan
+            df_cf.at[i, 'Cumulative_usd'] = pago_usd
+
+        df_cf['Cumulative_usd'] = df_cf['Cumulative_usd'].cumsum()
+
+        # Para cada fecha de precios, sumar los pagos acumulados hasta esa fecha EN USD
         clean_series = []
         pagos_aplicados = []
         last_cumulative = 0.0
         for fecha in precios.index:
             pagos_hasta_fecha = df_cf[df_cf['Fecha ajuste'] <= fecha]
-            cumulative = pagos_hasta_fecha['Cumulative'].iloc[-1] if not pagos_hasta_fecha.empty else 0.0
+            cumulative = pagos_hasta_fecha['Cumulative_usd'].iloc[-1] if not pagos_hasta_fecha.empty else 0.0
             clean_series.append(precios.loc[fecha] + cumulative)
             pagos_aplicados.append(cumulative - last_cumulative)
             last_cumulative = cumulative
@@ -191,7 +230,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     start_date = '2015-01-01'
     end_date = indice.index.max().strftime('%Y-%m-%d')
     spy_df = yf.download('SPY', start=start_date, end=end_date)
-    cemb_df = yf.download('CEMB', start=start_date, end=end_date)
+    cemb_df = yf.download('EMLC', start=start_date, end=end_date)
     spy = spy_df['Close'].squeeze()
     cemb = cemb_df['Close'].squeeze()
 
@@ -199,7 +238,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     df_compare = pd.concat([
         indice.rename('Indice'),
         spy.rename('SPY'),
-        cemb.rename('CEMB')
+        cemb.rename('EMLC')
     ], axis=1).dropna()
 
     # Calcular retornos diarios
@@ -210,13 +249,13 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     var_spy = np.var(retornos['SPY'])
     beta_spy = cov_spy / var_spy if var_spy != 0 else np.nan
 
-    cov_cemb = np.cov(retornos['Indice'], retornos['CEMB'])[0, 1]
-    var_cemb = np.var(retornos['CEMB'])
+    cov_cemb = np.cov(retornos['Indice'], retornos['EMLC'])[0, 1]
+    var_cemb = np.var(retornos['EMLC'])
     beta_cemb = cov_cemb / var_cemb if var_cemb != 0 else np.nan
 
     # Guardar resultados en DataFrame
     beta_df = pd.DataFrame({
-        'Activo': ['SPY', 'CEMB'],
+        'Activo': ['SPY', 'EMLC'],
         'Beta vs Indice': [beta_spy, beta_cemb]
     })
 
@@ -231,4 +270,4 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
     print(f"Precios clean exportados a {output_file}")
 
 # Ejemplo de uso:
-clean_bond_prices('on_precios.xlsx', 'on_cashflows.xlsx')
+clean_bond_prices('tasa_precios.xlsx', 'tasa_cashflows.xlsx')
