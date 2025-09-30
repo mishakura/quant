@@ -1,3 +1,4 @@
-- Add lecaps in 2023 the index has little assets so it gets more stdev
-- Check the index for ON - the return is too low. The stdev is ok
-- Add ON? Using gallo
+- Add lecaps
+- Change ON and Bonares Index so its returns
+- Add ON?
+- Add graphs?
