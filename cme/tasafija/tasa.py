@@ -3,6 +3,57 @@ import numpy as np
 
 
 def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_file='tasa_cme.xlsx'):
+    # Calcular estadísticas de la serie MEP para una hoja aparte
+    mep_df2 = pd.read_excel(mep_file, sheet_name='mep')
+    fecha_mep_col2 = next((col for col in mep_df2.columns if col.strip().lower() in ['fecha', 'date']), None)
+    dolar_mep_col2 = next((col for col in mep_df2.columns if col.strip().lower() in ['precio', 'dólar', 'dolar', 'usd', 'mep']), None)
+    mep_stats_df = None
+    if fecha_mep_col2 and dolar_mep_col2:
+        mep_serie2 = mep_df2.set_index(pd.to_datetime(mep_df2[fecha_mep_col2]))[dolar_mep_col2].dropna()
+        dias_habiles_anio = 252
+        retornos_mep = np.log(mep_serie2 / mep_serie2.shift(1)).dropna()
+        retorno_anual = retornos_mep.mean() * dias_habiles_anio
+        std_anual = retornos_mep.std() * np.sqrt(dias_habiles_anio)
+        roll_max = mep_serie2.cummax()
+        drawdown = (mep_serie2 - roll_max) / roll_max
+        worst_drawdown = drawdown.min()
+        retorno_total = (mep_serie2.iloc[-1] / mep_serie2.iloc[0]) - 1 if len(mep_serie2) > 1 else np.nan
+        años = (mep_serie2.index[-1] - mep_serie2.index[0]).days / 365.25 if len(mep_serie2) > 1 else np.nan
+        skewness = retornos_mep.skew()
+        kurtosis = retornos_mep.kurtosis()
+        mejor_dia = retornos_mep.max()
+        peor_dia = retornos_mep.min()
+        fecha_mejor_dia = retornos_mep.idxmax() if not retornos_mep.empty else None
+        fecha_peor_dia = retornos_mep.idxmin() if not retornos_mep.empty else None
+        sharpe = retorno_anual / std_anual if std_anual != 0 else np.nan
+        dd = drawdown.copy()
+        dd_periods = (dd < 0).astype(int)
+        dd_groups = (dd_periods.diff(1) != 0).cumsum()
+        dd_lengths = dd_periods.groupby(dd_groups).sum()
+        max_dd_length = dd_lengths.max() / dias_habiles_anio if not dd_lengths.empty else np.nan
+        cantidad_nans = mep_serie2.isna().sum()
+        mep_stats = {
+            'Retorno promedio anual': retorno_anual,
+            'Desviación estándar anual': std_anual,
+            'Worst drawdown': worst_drawdown,
+            'Retorno total': retorno_total,
+            'Skewness': skewness,
+            'Kurtosis': kurtosis,
+            'Mejor día': mejor_dia,
+            'Fecha mejor día': fecha_mejor_dia,
+            'Peor día': peor_dia,
+            'Fecha peor día': fecha_peor_dia,
+            'Sharpe ratio': sharpe,
+            'Duración drawdown más largo (años)': max_dd_length,
+            'Cantidad de datos en blanco': cantidad_nans
+        }
+        mep_stats_df = pd.DataFrame([mep_stats])
+    # --- Al final: volver a leer el archivo mep.xlsx y agregar MEP a stats_df ---
+    # (Este bloque debe ir justo antes de guardar el Excel)
+
+
+
+
     precios_xls = pd.ExcelFile(precios_file)
     cashflows_xls = pd.ExcelFile(cashflows_file)
     mep_df = pd.read_excel(mep_file, sheet_name='mep')
@@ -11,9 +62,9 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
     if fecha_mep_col is None:
         raise ValueError(f"No se encontró columna de fecha en mep.xlsx. Columnas disponibles: {list(mep_df.columns)}")
 
-    # Buscar columna de dólar MEP (más flexible)
+    # Buscar columna de dólar MEP (más flexible, acepta 'Precio')
     dolar_mep_col = next(
-        (col for col in mep_df.columns if any(x in col.strip().lower() for x in ['dólar', 'dolar', 'usd', 'mep', 'precio'])),
+        (col for col in mep_df.columns if col.strip().lower() in ['precio', 'dólar', 'dolar', 'usd', 'mep']),
         None
     )
     if dolar_mep_col is None:
@@ -207,6 +258,68 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
             'Cantidad de datos en blanco': cantidad_nans
         })
     stats_df = pd.DataFrame(stats)
+
+
+    # --- Nuevo método: índice por retorno promedio acumulado ---
+    # Calcular retornos diarios logarítmicos de cada activo
+    retornos_df = np.log(clean_df / clean_df.shift(1))
+    # Calcular el retorno promedio diario (ignorando NaNs)
+    retorno_promedio = retornos_df.mean(axis=1, skipna=True)
+    # Construir el índice acumulando el retorno promedio, base 100
+    indice = (1 + retorno_promedio).cumprod() * 100
+    # Ajustar para log-returns (más preciso):
+    indice = 100 * np.exp(retorno_promedio.cumsum())
+    indice_df = pd.DataFrame({'Indice': indice})
+
+    # Calcular estadísticas del índice y agregarlas a stats_df
+    dias_habiles_anio = 252
+    indice_serie = indice_df['Indice']
+    first_valid_idx = indice_serie.first_valid_index()
+    last_valid_idx = indice_serie.last_valid_index()
+    if first_valid_idx is not None and last_valid_idx is not None:
+        serie_recortada = indice_serie.loc[first_valid_idx:last_valid_idx]
+        cantidad_nans = serie_recortada.isna().sum()
+    else:
+        cantidad_nans = np.nan
+    serie = serie_recortada if first_valid_idx is not None and last_valid_idx is not None else pd.Series(dtype=float)
+    retornos = np.log(serie / serie.shift(1)).dropna()
+    retorno_anual = retornos.mean() * dias_habiles_anio
+    std_anual = retornos.std() * np.sqrt(dias_habiles_anio)
+    roll_max = serie.cummax()
+    drawdown = (serie - roll_max) / roll_max
+    worst_drawdown = drawdown.min()
+    retorno_total = (serie.iloc[-1] / serie.iloc[0]) - 1 if len(serie) > 1 else np.nan
+    años = (serie.index[-1] - serie.index[0]).days / 365.25 if len(serie) > 1 else np.nan
+    skewness = retornos.skew()
+    kurtosis = retornos.kurtosis()
+    mejor_dia = retornos.max()
+    peor_dia = retornos.min()
+    fecha_mejor_dia = retornos.idxmax() if not retornos.empty else None
+    fecha_peor_dia = retornos.idxmin() if not retornos.empty else None
+    sharpe = retorno_anual / std_anual if std_anual != 0 else np.nan
+    dd = drawdown.copy()
+    dd_periods = (dd < 0).astype(int)
+    dd_groups = (dd_periods.diff(1) != 0).cumsum()
+    dd_lengths = dd_periods.groupby(dd_groups).sum()
+    max_dd_length = dd_lengths.max() / dias_habiles_anio if not dd_lengths.empty else np.nan
+    indice_stats = {
+        'Activo': 'INDICE',
+        'Retorno promedio anual': retorno_anual,
+        'Desviación estándar anual': std_anual,
+        'Worst drawdown': worst_drawdown,
+        'Retorno total': retorno_total,
+        'Skewness': skewness,
+        'Kurtosis': kurtosis,
+        'Mejor día': mejor_dia,
+        'Fecha mejor día': fecha_mejor_dia,
+        'Peor día': peor_dia,
+        'Fecha peor día': fecha_peor_dia,
+        'Sharpe ratio': sharpe,
+        'Duración drawdown más largo (años)': max_dd_length,
+        'Cantidad de datos en blanco': cantidad_nans
+    }
+    stats_df = pd.concat([stats_df, pd.DataFrame([indice_stats])], ignore_index=True)
+
     # Agregar fila de promedio de cada estadística
     promedio = stats_df.mean(numeric_only=True)
     promedio['Activo'] = 'PROMEDIO'
@@ -266,6 +379,8 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
         stats_df.to_excel(writer, sheet_name='stats', index=False)
         indice_df.to_excel(writer, sheet_name='indice')
         beta_df.to_excel(writer, sheet_name='beta_vs_yahoo', index=False)
+        if mep_stats_df is not None:
+            mep_stats_df.to_excel(writer, sheet_name='mep_stats', index=False)
 
     print(f"Precios clean exportados a {output_file}")
 

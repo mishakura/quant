@@ -1,0 +1,3 @@
+- Add lecaps in 2023 the index has little assets so it gets more stdev
+- Check the index for ON - the return is too low. The stdev is ok
+- Add ON? Using gallo

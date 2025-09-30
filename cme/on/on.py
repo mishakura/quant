@@ -168,10 +168,69 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
             'Cantidad de datos en blanco': cantidad_nans
         })
     stats_df = pd.DataFrame(stats)
+
+    # Normalizar cada serie a 100 en la primera fecha disponible
+    norm_df = clean_df.copy()
+    for col in norm_df.columns:
+        first_valid = norm_df[col].first_valid_index()
+        if first_valid is not None and norm_df[col][first_valid] != 0:
+            norm_df[col] = norm_df[col] / norm_df[col][first_valid] * 100
+
     # Agregar fila de promedio de cada estadística
     promedio = stats_df.mean(numeric_only=True)
     promedio['Activo'] = 'PROMEDIO'
     stats_df = pd.concat([stats_df, pd.DataFrame([promedio])], ignore_index=True)
+
+    # Calcular estadísticas del índice y agregarlo a stats_df
+    if not norm_df.empty:
+        indice_name = 'INDICE'
+        serie_indice = norm_df.mean(axis=1, skipna=True).dropna()
+        # Recortar la serie entre el primer y último dato válido
+        first_valid_idx = serie_indice.first_valid_index()
+        last_valid_idx = serie_indice.last_valid_index()
+        if first_valid_idx is not None and last_valid_idx is not None:
+            serie_recortada = serie_indice.loc[first_valid_idx:last_valid_idx]
+            cantidad_nans = serie_recortada.isna().sum()
+        else:
+            cantidad_nans = np.nan
+        serie = serie_recortada if first_valid_idx is not None and last_valid_idx is not None else pd.Series(dtype=float)
+        retornos = np.log(serie / serie.shift(1)).dropna()
+        retorno_anual = retornos.mean() * dias_habiles_anio
+        std_anual = retornos.std() * np.sqrt(dias_habiles_anio)
+        roll_max = serie.cummax()
+        drawdown = (serie - roll_max) / roll_max
+        worst_drawdown = drawdown.min()
+        retorno_total = (serie.iloc[-1] / serie.iloc[0]) - 1 if len(serie) > 1 else np.nan
+        años = (serie.index[-1] - serie.index[0]).days / 365.25 if len(serie) > 1 else np.nan
+        skewness = retornos.skew()
+        kurtosis = retornos.kurtosis()
+        mejor_dia = retornos.max()
+        peor_dia = retornos.min()
+        fecha_mejor_dia = retornos.idxmax() if not retornos.empty else None
+        fecha_peor_dia = retornos.idxmin() if not retornos.empty else None
+        sharpe = retorno_anual / std_anual if std_anual != 0 else np.nan
+        dd = drawdown.copy()
+        dd_periods = (dd < 0).astype(int)
+        dd_groups = (dd_periods.diff(1) != 0).cumsum()
+        dd_lengths = dd_periods.groupby(dd_groups).sum()
+        max_dd_length = dd_lengths.max() / dias_habiles_anio if not dd_lengths.empty else np.nan
+        stats_indice = {
+            'Activo': indice_name,
+            'Retorno promedio anual': retorno_anual,
+            'Desviación estándar anual': std_anual,
+            'Worst drawdown': worst_drawdown,
+            'Retorno total': retorno_total,
+            'Skewness': skewness,
+            'Kurtosis': kurtosis,
+            'Mejor día': mejor_dia,
+            'Fecha mejor día': fecha_mejor_dia,
+            'Peor día': peor_dia,
+            'Fecha peor día': fecha_peor_dia,
+            'Sharpe ratio': sharpe,
+            'Duración drawdown más largo (años)': max_dd_length,
+            'Cantidad de datos en blanco': cantidad_nans
+        }
+        stats_df = pd.concat([stats_df, pd.DataFrame([stats_indice])], ignore_index=True)
 
     # Normalizar cada serie a 100 en la primera fecha disponible
     norm_df = clean_df.copy()
