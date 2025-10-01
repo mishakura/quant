@@ -1,4 +1,3 @@
-- Add lecaps
-- Change ON and Bonares Index so its returns
-- Add ON?
-- Add graphs?
+- Galileo Multimercado II agregar para CER
+- Ver que sucede en ON que el indice solo gana el 2%
+-Chequear indice de Bonares

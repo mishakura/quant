@@ -181,8 +181,13 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='bonares_cme.xls
         if first_valid is not None and norm_df[col][first_valid] != 0:
             norm_df[col] = norm_df[col] / norm_df[col][first_valid] * 100
 
-    # El índice es el promedio de los activos disponibles en cada fecha (índice arranca desde lo más viejo)
-    indice = norm_df.mean(axis=1, skipna=True).dropna()
+    # --- NUEVO: Índice por retornos promedios ---
+    # Calcular retornos diarios logarítmicos de cada activo
+    logret_df = np.log(clean_df / clean_df.shift(1))
+    # Promediar retornos diarios ignorando NaN
+    mean_logret = logret_df.mean(axis=1, skipna=True)
+    # Reconstruir el índice acumulando retornos desde 100
+    indice = 100 * np.exp(mean_logret.cumsum())
     indice_df = pd.DataFrame({'Indice': indice})
 
     # --- Yahoo Finance: Beta vs SPY y CEMB ---
@@ -196,7 +201,7 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='bonares_cme.xls
     spy = spy_df['Close'].squeeze()
     cemb = cemb_df['Close'].squeeze()
 
-    # Alinear fechas con el índice
+    # Alinear fechas con el índice de retornos
     df_compare = pd.concat([
         indice.rename('Indice'),
         spy.rename('SPY'),

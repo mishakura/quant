@@ -289,5 +289,60 @@ def clean_bond_prices(precios_file, cashflows_file, output_file='on_cme.xlsx'):
 
     print(f"Precios clean exportados a {output_file}")
 
+    # Calcular retornos diarios de cada activo
+    retornos_df = np.log(clean_df / clean_df.shift(1))
+
+    # El índice alternativo: promedio de retornos diarios de los activos vigentes en cada fecha
+    indice_retornos = retornos_df.mean(axis=1, skipna=True)
+
+    # Para tener una serie de precios de índice, acumulamos los retornos diarios
+    indice_precio = 100 * np.exp(indice_retornos.cumsum())
+    indice_precio.name = 'IndiceRetornosProm'
+
+    # --- Guardar índice alternativo y sus estadísticas ---
+    # Calcular estadísticas del índice alternativo (por retornos promedio)
+    serie_indice_alt = indice_precio.dropna()
+    if not serie_indice_alt.empty:
+        dias_habiles_anio = 252
+        retornos_alt = np.log(serie_indice_alt / serie_indice_alt.shift(1)).dropna()
+        retorno_anual_alt = retornos_alt.mean() * dias_habiles_anio
+        std_anual_alt = retornos_alt.std() * np.sqrt(dias_habiles_anio)
+        roll_max_alt = serie_indice_alt.cummax()
+        drawdown_alt = (serie_indice_alt - roll_max_alt) / roll_max_alt
+        worst_drawdown_alt = drawdown_alt.min()
+        retorno_total_alt = (serie_indice_alt.iloc[-1] / serie_indice_alt.iloc[0]) - 1 if len(serie_indice_alt) > 1 else np.nan
+        skewness_alt = retornos_alt.skew()
+        kurtosis_alt = retornos_alt.kurtosis()
+        mejor_dia_alt = retornos_alt.max()
+        peor_dia_alt = retornos_alt.min()
+        fecha_mejor_dia_alt = retornos_alt.idxmax() if not retornos_alt.empty else None
+        fecha_peor_dia_alt = retornos_alt.idxmin() if not retornos_alt.empty else None
+        sharpe_alt = retorno_anual_alt / std_anual_alt if std_anual_alt != 0 else np.nan
+        dd_alt = drawdown_alt.copy()
+        dd_periods_alt = (dd_alt < 0).astype(int)
+        dd_groups_alt = (dd_periods_alt.diff(1) != 0).cumsum()
+        dd_lengths_alt = dd_periods_alt.groupby(dd_groups_alt).sum()
+        max_dd_length_alt = dd_lengths_alt.max() / dias_habiles_anio if not dd_lengths_alt.empty else np.nan
+        stats_indice_alt = {
+            'Activo': 'INDICE_RETORNOS_PROM',
+            'Retorno promedio anual': retorno_anual_alt,
+            'Desviación estándar anual': std_anual_alt,
+            'Worst drawdown': worst_drawdown_alt,
+            'Retorno total': retorno_total_alt,
+            'Skewness': skewness_alt,
+            'Kurtosis': kurtosis_alt,
+            'Mejor día': mejor_dia_alt,
+            'Fecha mejor día': fecha_mejor_dia_alt,
+            'Peor día': peor_dia_alt,
+            'Fecha peor día': fecha_peor_dia_alt,
+            'Sharpe ratio': sharpe_alt,
+            'Duración drawdown más largo (años)': max_dd_length_alt,
+            'Cantidad de datos en blanco': serie_indice_alt.isna().sum()
+        }
+        # Guardar índice alternativo y stats en Excel
+        with pd.ExcelWriter(output_file, mode='a', if_sheet_exists='replace', engine='openpyxl') as writer:
+            indice_precio.to_frame().to_excel(writer, sheet_name='indice_retornos_prom')
+            pd.DataFrame([stats_indice_alt]).to_excel(writer, sheet_name='stats_indice_retornos_prom', index=False)
+
 # Ejemplo de uso:
 clean_bond_prices('on_precios.xlsx', 'on_cashflows.xlsx')

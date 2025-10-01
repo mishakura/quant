@@ -17,7 +17,11 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
         roll_max = mep_serie2.cummax()
         drawdown = (mep_serie2 - roll_max) / roll_max
         worst_drawdown = drawdown.min()
-        retorno_total = (mep_serie2.iloc[-1] / mep_serie2.iloc[0]) - 1 if len(mep_serie2) > 1 else np.nan
+        non_na = mep_serie2.dropna()
+        if len(non_na) > 1 and non_na.iloc[0] != 0:
+            retorno_total = non_na.iloc[-1] / non_na.iloc[0] - 1
+        else:
+            retorno_total = np.nan
         años = (mep_serie2.index[-1] - mep_serie2.index[0]).days / 365.25 if len(mep_serie2) > 1 else np.nan
         skewness = retornos_mep.skew()
         kurtosis = retornos_mep.kurtosis()
@@ -220,7 +224,14 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
         drawdown = (serie - roll_max) / roll_max
         worst_drawdown = drawdown.min()
         # Retorno total
-        retorno_total = (serie.iloc[-1] / serie.iloc[0]) - 1 if len(serie) > 1 else np.nan
+        # Retorno total calculado a partir de retornos logarítmicos acumulados (más robusto)
+        retorno_total = np.exp(retornos.sum()) - 1 if not retornos.empty else np.nan
+        # Retorno total: primer/último valor válido de la serie (más explícito y robusto)
+        non_na = serie.dropna()
+        if len(non_na) > 1 and non_na.iloc[0] != 0:
+            retorno_total = non_na.iloc[-1] / non_na.iloc[0] - 1
+        else:
+            retorno_total = np.nan
         # años para duración drawdown
         años = (serie.index[-1] - serie.index[0]).days / 365.25 if len(serie) > 1 else np.nan
         # Skewness y kurtosis
@@ -241,6 +252,10 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
         dd_groups = (dd_periods.diff(1) != 0).cumsum()
         dd_lengths = dd_periods.groupby(dd_groups).sum()
         max_dd_length = dd_lengths.max() / dias_habiles_anio if not dd_lengths.empty else np.nan
+
+        # Auditoría: imprimir retornos y estadísticas para cada activo
+
+        # <--- AGREGAR ESTE BLOQUE --->
         stats.append({
             'Activo': activo,
             'Retorno promedio anual': retorno_anual,
@@ -257,17 +272,16 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
             'Duración drawdown más largo (años)': max_dd_length,
             'Cantidad de datos en blanco': cantidad_nans
         })
+        # <--- FIN BLOQUE AGREGADO
     stats_df = pd.DataFrame(stats)
 
 
-    # --- Nuevo método: índice por retorno promedio acumulado ---
+    # --- Índice robusto: por retorno promedio acumulado ---
     # Calcular retornos diarios logarítmicos de cada activo
     retornos_df = np.log(clean_df / clean_df.shift(1))
     # Calcular el retorno promedio diario (ignorando NaNs)
     retorno_promedio = retornos_df.mean(axis=1, skipna=True)
     # Construir el índice acumulando el retorno promedio, base 100
-    indice = (1 + retorno_promedio).cumprod() * 100
-    # Ajustar para log-returns (más preciso):
     indice = 100 * np.exp(retorno_promedio.cumsum())
     indice_df = pd.DataFrame({'Indice': indice})
 
@@ -288,7 +302,11 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
     roll_max = serie.cummax()
     drawdown = (serie - roll_max) / roll_max
     worst_drawdown = drawdown.min()
-    retorno_total = (serie.iloc[-1] / serie.iloc[0]) - 1 if len(serie) > 1 else np.nan
+    # Retorno total: último valor dividido el primero, menos 1
+    if len(serie) > 1 and serie.iloc[0] != 0:
+        retorno_total = serie.iloc[-1] / serie.iloc[0] - 1
+    else:
+        retorno_total = np.nan
     años = (serie.index[-1] - serie.index[0]).days / 365.25 if len(serie) > 1 else np.nan
     skewness = retornos.skew()
     kurtosis = retornos.kurtosis()
@@ -325,64 +343,17 @@ def clean_bond_prices(precios_file, cashflows_file, mep_file='mep.xlsx', output_
     promedio['Activo'] = 'PROMEDIO'
     stats_df = pd.concat([stats_df, pd.DataFrame([promedio])], ignore_index=True)
 
-    # Normalizar cada serie a 100 en la primera fecha disponible
-    norm_df = clean_df.copy()
-    for col in norm_df.columns:
-        first_valid = norm_df[col].first_valid_index()
-        if first_valid is not None and norm_df[col][first_valid] != 0:
-            norm_df[col] = norm_df[col] / norm_df[col][first_valid] * 100
-
-    # El índice es el promedio de los activos disponibles en cada fecha (índice arranca desde lo más viejo)
-    indice = norm_df.mean(axis=1, skipna=True).dropna()
-    indice_df = pd.DataFrame({'Indice': indice})
-
-    # --- Yahoo Finance: Beta vs SPY y CEMB ---
-    import yfinance as yf
-
-    # Descargar datos desde 2015-01-01
-    start_date = '2015-01-01'
-    end_date = indice.index.max().strftime('%Y-%m-%d')
-    spy_df = yf.download('SPY', start=start_date, end=end_date)
-    cemb_df = yf.download('EMLC', start=start_date, end=end_date)
-    spy = spy_df['Close'].squeeze()
-    cemb = cemb_df['Close'].squeeze()
-
-    # Alinear fechas con el índice
-    df_compare = pd.concat([
-        indice.rename('Indice'),
-        spy.rename('SPY'),
-        cemb.rename('EMLC')
-    ], axis=1).dropna()
-
-    # Calcular retornos diarios
-    retornos = np.log(df_compare / df_compare.shift(1)).dropna()
-
-    # Calcular beta del índice vs SPY y CEMB
-    cov_spy = np.cov(retornos['Indice'], retornos['SPY'])[0, 1]
-    var_spy = np.var(retornos['SPY'])
-    beta_spy = cov_spy / var_spy if var_spy != 0 else np.nan
-
-    cov_cemb = np.cov(retornos['Indice'], retornos['EMLC'])[0, 1]
-    var_cemb = np.var(retornos['EMLC'])
-    beta_cemb = cov_cemb / var_cemb if var_cemb != 0 else np.nan
-
-    # Guardar resultados en DataFrame
-    beta_df = pd.DataFrame({
-        'Activo': ['SPY', 'EMLC'],
-        'Beta vs Indice': [beta_spy, beta_cemb]
-    })
-
     # Guardar todo en Excel
     with pd.ExcelWriter(output_file) as writer:
         clean_df.to_excel(writer, sheet_name='clean')
         pagos_df.to_excel(writer, sheet_name='pagos_aplicados')
         stats_df.to_excel(writer, sheet_name='stats', index=False)
         indice_df.to_excel(writer, sheet_name='indice')
-        beta_df.to_excel(writer, sheet_name='beta_vs_yahoo', index=False)
+        # beta_df.to_excel(writer, sheet_name='beta_vs_yahoo', index=False)  # Elimina o comenta esta línea
         if mep_stats_df is not None:
             mep_stats_df.to_excel(writer, sheet_name='mep_stats', index=False)
 
-    print(f"Precios clean exportados a {output_file}")
+  
 
 # Ejemplo de uso:
 clean_bond_prices('tasa_precios.xlsx', 'tasa_cashflows.xlsx')
