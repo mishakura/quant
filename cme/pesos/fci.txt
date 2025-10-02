@@ -1,0 +1,28 @@
+
+Letras
+Galileo Ahorro
+Es un fondo de inversión en pesos que tiene como objetivo capturar un rendimiento superior a la tasa de interés de fondos Money Market, 
+invirtiendo en Letras Capitalizables (Lecaps).
+
+
+#CPF
+Galileo Abierto PyME
+Es un fondo de inversión que tiene como objetivo maximizar el rendimiento a través de 
+instrumentos de renta fija del segmento PyME. Invierte en Cheques de Pago Diferido, Pagarés, 
+Obligaciones Negociables, Fideicomisos Financieros, Pases del Banco Central y Colocaciones financieras.
+
+# DL
+Galileo Argentina
+Es un fondo de inversión que tiene por objetivo obtener apreciación de capital mediante un portafolio diversificado principalmente de 
+bonos “Dólar-Linked”. Los instrumentos "Dólar-Linked", emitidos y pagados en pesos, generan un retorno que está determinado 
+por un cupón fijo más la variación de capital que genera los movimientos del tipo de cambio oficial.
+
+
+# On Galileo
+Galileo premium
+Es un fondo de inversión que tiene como objetivo capturar la variación del tipo de cambio peso/dólar a través de 
+instrumentes de renta fija en dólares de corto /mediano plazo. Invierte en bonos corporativos en dólares de calidad crediticia. 
+Es un fondo idea para la cobertura del tipo de cambio.
+
+
+
