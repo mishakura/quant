@@ -31,7 +31,7 @@ indices_df = pd.concat(dfs, axis=1)
 indices_df.index = pd.to_datetime(indices_df.index)
 indices_df = indices_df.sort_index()
 
-# 2b. Descargar activos de yfinance y convertirlos a pesos
+# 2b. Descargar activos de yfinance con precios ajustados
 print('\n--- DESCARGANDO ACTIVOS DE YFINANCE ---')
 yf_tickers = ['SPY', 'GLD', 'BNDX', 'BND', 'VEA', 'IEMG', 'DBC', 'VFMF', 'DBMF', 'PSP', 'IPO', 'HDG']
 yf_data = {}
@@ -39,31 +39,42 @@ yf_data = {}
 for ticker in yf_tickers:
     try:
         print(f'Descargando {ticker}...')
-        # Descargar datos desde la fecha más antigua de MEP
-        if 'Mep' in indices_df.columns:
-            start_date = indices_df['Mep'].first_valid_index()
-        else:
-            start_date = indices_df.index.min()
+        # Descargar datos desde 1947
+        start_date = "1947-01-01"
         
-        data = yf.download(ticker, start=start_date, progress=False, auto_adjust=False)
+        # Descargar con auto_adjust=True para obtener precios ya ajustados
+        data = yf.download(ticker, start=start_date, progress=False, auto_adjust=True)
         if not data.empty and 'Close' in data.columns:
             yf_data[ticker] = data['Close']
-            print(f'  ✓ {ticker}: {len(data)} registros')
+            print(f'  ✓ {ticker}: {len(data)} registros (ajustado por dividendos/splits)')
         else:
             print(f'  ✗ {ticker}: Sin datos')
     except Exception as e:
         print(f'  ✗ {ticker}: Error - {e}')
 
-# Agregar activos de yfinance directamente (se mantendrán en USD)
+# Agregar activos de yfinance ajustados (en USD)
 if yf_data:
-    print('\nAgregando activos de yfinance (en USD)...')
+    print('\nAgregando activos de yfinance AJUSTADOS (en USD)...')
     
+    # Crear una lista de DataFrames para concat
+    series_list = [indices_df]
     for ticker, prices in yf_data.items():
-        # Agregar directamente a indices_df
-        indices_df[ticker] = prices
-        print(f'  ✓ {ticker} agregado')
+        # Verificar si es una Serie o DataFrame y convertir apropiadamente
+        if isinstance(prices, pd.Series):
+            series_list.append(prices.to_frame(name=ticker))
+        else:
+            # Si es un DataFrame, asegurarse de que la columna tenga el nombre correcto
+            df_temp = prices.copy()
+            df_temp.columns = [ticker]
+            series_list.append(df_temp)
     
-    print(f'\nTotal de activos: {len(indices_df.columns)} (locales + yfinance)')
+    # Hacer merge con outer join para mantener TODAS las fechas (tanto de indices.xlsx como de yfinance)
+    indices_df = pd.concat(series_list, axis=1, join='outer').sort_index()
+    
+    print(f'  ✓ Datos de yfinance agregados con outer join')
+    print(f'  ✓ Rango de fechas extendido: {indices_df.index.min()} a {indices_df.index.max()}')
+    print(f'\nTotal de activos: {len(indices_df.columns)} (locales + yfinance ajustados)')
+    print(f'Total de fechas: {len(indices_df)} días')
 else:
     print('\nNo se descargaron activos de yfinance')
 
@@ -96,11 +107,20 @@ for col in indices_df.columns:
     else:
         # Todos los demás activos están en USD, ajustar por CPI USA
         nominal = indices_df[col]
-        cpi_vals = cpi_daily['CPI']
-        # Crear serie real: precio nominal * (CPI_base / CPI_fecha)
-        real = nominal * (cpi_base / cpi_vals)
-        indices_df_real[col] = real
-        print(f'{col}: Ajustado por CPI USA')
+        
+        # Usar el CPI de la primera fecha válida de ESTE activo como base
+        first_valid_idx = nominal.first_valid_index()
+        if first_valid_idx is not None:
+            cpi_base_activo = cpi_daily.loc[first_valid_idx, 'CPI']
+            cpi_vals = cpi_daily['CPI']
+            # Crear serie real: precio nominal * (CPI_base_activo / CPI_fecha)
+            real = nominal * (cpi_base_activo / cpi_vals)
+            indices_df_real[col] = real
+            print(f'{col}: Ajustado por CPI USA (base: {first_valid_idx.date()}, CPI={cpi_base_activo:.2f})')
+        else:
+            # Si no hay datos válidos, dejar como NaN
+            indices_df_real[col] = nominal
+            print(f'{col}: Sin datos válidos, no se ajusta')
 
 # Crear activo sintético: Dólar Real (poder adquisitivo del USD)
 # Empieza en 100 y se deflacta por CPI para mostrar pérdida de poder adquisitivo
@@ -226,8 +246,14 @@ for col in indices_df_real.columns:
     
     cantidad_nans = indices_df_real[col].isna().sum()
     
+    # Fecha de inicio y fin de la serie
+    fecha_inicio = serie.index[0]
+    fecha_fin = serie.index[-1]
+    
     stats.append({
         'Indice': col,
+        'Fecha inicio': fecha_inicio,
+        'Fecha fin': fecha_fin,
         'Retorno promedio anual': retorno_anual,
         'CAGR': cagr,
         'Desviación estándar anual': std_anual,
@@ -259,7 +285,9 @@ for col in indices_df_real.columns:
     df['High'] = df[[col, 'Open']].max(axis=1)
     df['Low'] = df[[col, 'Open']].min(axis=1)
     df_ohlc = df.rename(columns={col: 'Close'})[['Open', 'High', 'Low', 'Close']]
-    mpf.plot(df_ohlc, type='line', style='charles', title=f'Histórico {col} (ajustado por inflación)', ylabel=col, volume=False)
+    # Convertir col a string para evitar problemas con tuplas
+    col_str = str(col) if not isinstance(col, str) else col
+    mpf.plot(df_ohlc, type='line', style='charles', title=f'Histórico {col_str} (ajustado por inflación)', ylabel=col_str, volume=False)
 
 # 10. Guardar todas las estadísticas en Excel
 with pd.ExcelWriter('estadisticas_indices.xlsx') as writer:
