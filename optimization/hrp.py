@@ -13,9 +13,13 @@ pd.options.display.float_format = '{:.4%}'.format
 start = '2000-01-01'
 end = '2025-12-30'
 
-# Tickers of assets
-assets = [
-    "VEA","IJH","IWM","IEMG","ARGT","BTC-USD","GDX","GLD","SLV","USO","URA"
+
+#assets = [
+#   "VEA","IJH","IWM","IEMG","YPF","BTC-USD","GDX","GLD","SLV","USO","URA","SPY", 
+#    "IBB"
+#]
+assets = ['SPY','IJH','IWM','IEMG','VEA'
+    
 ]
 assets.sort()
 
@@ -39,13 +43,28 @@ else:
     print("No se encontró el archivo indices.xlsx")
 
 # Combinar todos los activos (tickers + hojas del Excel)
-all_assets = assets + extra_assets
+all_assets = assets
+
+print("\nEarliest available date for each asset:")
+for asset in all_assets:
+    first_date = data[asset].first_valid_index()
+    print(f"{asset}: {first_date}")
+
+# Find the latest start date (when ALL assets have data)
+latest_start = data[all_assets].apply(lambda x: x.first_valid_index()).max()
+print(f"\nLatest common start date: {latest_start}")
+
+# Trim data to start from latest_start (so all assets have complete data)
+data_aligned = data.loc[latest_start:, all_assets].copy()
+
+# Drop any remaining rows with NaN (shouldn't be any after alignment)
+data_aligned = data_aligned.dropna()
+
+print(f"Using data from {data_aligned.index[0]} to {data_aligned.index[-1]}")
+print(f"Total days: {len(data_aligned)}")
 
 # Calculando retornos para todos los activos
-Y = data[all_assets].pct_change().dropna()
-
-# Calculate current daily std
-current_stds = Y.std()
+Y = data_aligned.pct_change().dropna()
 
 # Output annualized standard deviation for all assets
 print("\nAnnualized standard deviation for all assets:")
@@ -81,13 +100,13 @@ w = port.optimization(model=model,
                       max_k=max_k,
                       leaf_order=leaf_order)
 
-print("\nOptimal HERC Portfolio Weights:")
+print("\nOptimal HRP Portfolio Weights:")
 print(w)
 
 # Calculate expected portfolio return and risk
 weights = w.values.flatten()
-mean_returns = Y.mean() * 252  # Annualized mean returns
-cov_matrix = Y.cov() * 252     # Annualized covariance matrix
+mean_returns = Y.mean() * 252
+cov_matrix = Y.cov() * 252
 
 # Expected portfolio return
 portfolio_return = np.dot(weights, mean_returns)
@@ -99,36 +118,12 @@ print(f"\nExpected annualized portfolio return: {portfolio_return:.2%}")
 print(f"Expected annualized portfolio risk (std): {portfolio_risk:.2%}")
 
 # Output weights to Excel
-w.to_excel("herc_portfolio_weights.xlsx")
-print("\nWeights saved to herc_portfolio_weights.xlsx")
-
-print("\nEarliest available date for each asset:")
-for asset in all_assets:
-    print(f"{asset}: {data[asset].first_valid_index()}")
+w.to_excel("hrp_portfolio_weights.xlsx")
+print("\nWeights saved to hrp_portfolio_weights.xlsx")
 
 # Print the annualized mean return of each asset
 print("\nAnnualized mean return for each asset:")
 for asset in Y.columns:
     mean_ret = Y[asset].mean() * 252
     print(f"{asset}: {mean_ret:.2%}")
-
-# Forzar desviación estándar anualizada de 8% para Galileo Event Driven
-target_std = 0.08
-asset_name = "Galileo Event Driven"
-if asset_name in data.columns:
-    # Calcular retornos diarios logarítmicos
-    log_ret = np.log(data[asset_name] / data[asset_name].shift(1)).dropna()
-    current_std = log_ret.std() * np.sqrt(252)
-    if current_std > 0:
-        scale = target_std / current_std
-        # Escalar los retornos logarítmicos
-        adj_log_ret = log_ret * scale
-        # Reconstruir la serie de precios ajustada
-        adj_prices = data[asset_name].dropna().iloc[0] * np.exp(adj_log_ret.cumsum())
-        data.loc[adj_prices.index, asset_name] = adj_prices
-        print(f"Desviación estándar anualizada de '{asset_name}' ajustada a 8%.")
-    else:
-        print(f"No se pudo ajustar la desviación estándar de '{asset_name}' (std actual = 0).")
-else:
-    print(f"'{asset_name}' no está en los datos.")
 

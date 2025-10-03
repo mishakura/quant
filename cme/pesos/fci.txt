@@ -24,5 +24,8 @@ Es un fondo de inversión que tiene como objetivo capturar la variación del tip
 instrumentes de renta fija en dólares de corto /mediano plazo. Invierte en bonos corporativos en dólares de calidad crediticia. 
 Es un fondo idea para la cobertura del tipo de cambio.
 
-
+# Galileo pesos
+Es un fondo de inversión en pesos que brinda liquidez inmediata con un rendimiento cercano al del plazo fijo. 
+Invierte en cuentas a la vista remuneradas, pases del Banco Central y en certificados de plazo fijo. 
+Es un fondo ideal para inversiones en pesos de muy corto plazo.
 

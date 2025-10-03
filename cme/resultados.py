@@ -33,7 +33,7 @@ indices_df = indices_df.sort_index()
 
 # 2b. Descargar activos de yfinance con precios ajustados
 print('\n--- DESCARGANDO ACTIVOS DE YFINANCE ---')
-yf_tickers = ['SPY', 'GLD', 'BNDX', 'BND', 'VEA', 'IEMG', 'DBC', 'VFMF', 'DBMF', 'PSP', 'IPO', 'HDG']
+yf_tickers = ['SPY', 'GLD', 'BND', 'VEA', 'IEMG', 'VFMF']
 yf_data = {}
 
 for ticker in yf_tickers:
@@ -275,6 +275,17 @@ stats_df = pd.DataFrame(stats)
 print("\nEstadísticas completas (series reales):")
 print(stats_df)
 
+# Calcular matriz de correlación y covarianza de los retornos diarios reales
+correlation_matrix = returns.corr()
+covariance_matrix = returns.cov()
+
+# Calcular retornos mensuales sobre series reales
+returns_monthly = indices_df_real.resample('M').last().pct_change().dropna()
+
+# Matriz de correlación y covarianza mensual
+correlation_matrix_monthly = returns_monthly.corr()
+covariance_matrix_monthly = returns_monthly.cov()
+
 # 9. Graficar precios reales por activo
 for col in indices_df_real.columns:
     df = indices_df_real[[col]].dropna().copy()
@@ -296,5 +307,9 @@ with pd.ExcelWriter('estadisticas_indices.xlsx') as writer:
     zero_count.to_frame('Zero_count').to_excel(writer, sheet_name='Zero_count')
     indices_df_real.to_excel(writer, sheet_name='Series_Reales')
     indices_df.to_excel(writer, sheet_name='Series_Nominales')
+    correlation_matrix.to_excel(writer, sheet_name='Correlacion')
+    covariance_matrix.to_excel(writer, sheet_name='Covarianza')
+    correlation_matrix_monthly.to_excel(writer, sheet_name='Correlacion_Mensual')
+    covariance_matrix_monthly.to_excel(writer, sheet_name='Covarianza_Mensual')
 
 print("\nEstadísticas exportadas a estadisticas_indices.xlsx")
