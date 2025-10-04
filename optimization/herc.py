@@ -14,7 +14,7 @@ start = '2000-01-01'
 end = '2025-12-30'
 
 assets = [
- "VEA","IJH","IWM","IEMG","YPF","BTC-USD","GDX","GLD","SLV","USO","URA","SPY"
+ "VEA","IJH","IWM","IEMG","YPF","BTC-USD","GDX","GLD","SLV","USO","URA","SPY",'ETC-USD'
 ]
 
 assets.sort()
@@ -80,7 +80,7 @@ ax = hc.plot_dendrogram(returns=Y,
 port = hc.HCPortfolio(returns=Y)
 
 # Estimate optimal portfolio:
-model='HRP' # Could be HRP or HERC
+model='HERC' # Could be HRP or HERC
 correlation = 'pearson' # Correlation matrix used to group assets in clusters
 rm = 'MV' # Risk measure used, this time will be variance
 rf = 0.3 # Risk free rate
@@ -114,8 +114,8 @@ print(f"\nExpected annualized portfolio return: {portfolio_return:.2%}")
 print(f"Expected annualized portfolio risk (std): {portfolio_risk:.2%}")
 
 # Output weights to Excel
-w.to_excel("hrp_portfolio_weights.xlsx")
-print("\nWeights saved to hrp_portfolio_weights.xlsx")
+w.to_excel("herc_portfolio_weights.xlsx")
+print("\nWeights saved to herc_portfolio_weights.xlsx")
 
 # Print the annualized mean return of each asset
 print("\nAnnualized mean return for each asset:")
