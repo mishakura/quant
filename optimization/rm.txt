@@ -1,0 +1,48 @@
+MSV:
+MSV (Minimum Semi-Variance) measures only the variance of negative returns — i.e., 
+the variability of returns below the mean or below a target.
+Mathematically, it’s like variance but replaces squared deviations with squared negative deviations only.
+It squares those negative deviations before averaging them.
+That squaring step is key — it means big losses count a lot more than small ones.
+
+
+
+FSLP:
+It looks only at the returns below a target (for example, 0% or the average return)
+and calculates the average shortfall — how far below that target you fall when you lose.
+How far below 0% are they? → 1%, 3%, 2%.
+FLPM = (1 + 3 + 2) / 3 = 2%
+✅ So your average loss when you lose is 2%.
+
+SLPM
+Like FLPM, but squares the shortfalls to punish large ones more heavily.
+
+
+CVaR:
+CVaR calculates the average loss in the worst α fraction of cases (e.g. worst 5%).  
+
+VaR:
+VaR gives you the exact loss value at:
+95% confidence → roughly 1.65 standard deviations below the mean
+99% confidence → roughly 2.33 standard deviations below the mea
+(You can choose the %confidence)
+
+
+MDD – Maximum Drawdown
+The largest drop from a peak to a trough in the asset’s price
+If MDD is the risk measure:
+Assets with larger MDD → considered riskier → get less weight
+Assets with smaller MDD → considered safer → get more weight
+
+CDaR 
+Compute all drawdowns for an asset or portfolio:
+Example: portfolio goes $100 → $90 → $80 → $95
+Drawdowns: -10% (from 100 → 90), -20% (100 → 80)
+Pick a confidence level, e.g., 95%
+Identify the worst 5% of drawdowns
+CDaR = average of those worst drawdowns
+
+EDaR
+EDaR measures all drawdowns, but weights the big ones more 
+heavily — giving a smooth, tail-sensitive measure of 
+downside risk, and assets with higher EDaR get lower weights in HRP.
