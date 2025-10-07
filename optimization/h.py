@@ -29,13 +29,19 @@ warnings.filterwarnings("ignore")
 pd.options.display.float_format = '{:.4%}'.format
 
 # Date range
-start = '1930-01-01'
+start = '1900-01-01'
 end = '2025-12-30'
 
-assets =["GDX","SLV","BTC-USD","XLC","XLK","XLRE","XLU",
-         "XLP","XLV","IJH","IWM","XLI","XLB","XLF","URA","EEM","VEA","XLE",
-         "XLY"
-]
+""" assets = [
+    "ARKK", "SPXL", "XLE", "GLD", "XLF", "FXI", "QQQ", "BTC-USD",
+    "IEMG", "IEUR", "IJH", "ETH-USD", "ACWI", "EWZ", "EFA",
+    "EEM", "EWJ", "IBB", "IVW", "IVE", "SLV", "IWM", "URA",
+    "DIA", "SPY", "XLC", "XLY", "XLP", "XLV", "XLI", "XLB",
+    "XLRE", "XLK", "CIBR", "XLU", "USO", "ITA", "TQQQ", "VXX",
+    "SMH", "VIG", "VEA", "GDX", "PSQ", "SH", "ARGT"
+] """
+
+assets = ["TQQQ","SPXL","BTC-USD","SLV","GDX","IEMG","VEA","IJH","IWM","ARGT","ARKK","ETH-USD","SMH","CIBR"]
 assets.sort()
 
 # Descargar precios de Yahoo Finance (auto_adjust=True para ajustar precios por splits/dividendos)
@@ -320,7 +326,9 @@ if mean_of_means is not None:
 
 # Now compute stats for each result (including SPY and the new ensemble sheets)
 stats = []
-if 'SPY' in Y.columns:
+# Always include SPY benchmark stats if we were able to obtain them,
+# even when SPY is not part of the portfolio asset list.
+if spy_stat is not None:
     stats.append(spy_stat)
 
 for rm, w in results.items():
