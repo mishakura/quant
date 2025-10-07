@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import skew, kurtosis
 import os
+import matplotlib.pyplot as plt
 
 # List of all risk measures supported by Riskfolio for hierarchical models
 RISK_MEASURES = [
@@ -31,8 +32,10 @@ pd.options.display.float_format = '{:.4%}'.format
 start = '1930-01-01'
 end = '2025-12-30'
 
-assets = []
-
+assets =["GDX","SLV","BTC-USD","XLC","XLK","XLRE","XLU",
+         "XLP","XLV","IJH","IWM","XLI","XLB","XLF","URA","EEM","VEA","XLE",
+         "XLY"
+]
 assets.sort()
 
 # Descargar precios de Yahoo Finance (auto_adjust=True para ajustar precios por splits/dividendos)
@@ -55,7 +58,7 @@ else:
     print("No se encontró el archivo indices.xlsx")
 
 # Combinar todos los activos (tickers + hojas del Excel)
-all_assets = assets + extra_assets
+all_assets = assets
 
 print("\nEarliest available date for each asset:")
 for asset in all_assets:
@@ -137,6 +140,10 @@ if spy_rets is not None:
     spy_rets = pd.Series(spy_rets).dropna()
 
     spy_ann_return = (1 + spy_rets).prod() ** (252 / len(spy_rets)) - 1
+    # Geometric mean (daily and annualized). Daily geometric mean is useful to compare
+    # with the arithmetic mean; annualized geometric mean equals spy_ann_return above.
+    spy_gmean_daily = (1 + spy_rets).prod() ** (1 / len(spy_rets)) - 1 if len(spy_rets) > 0 else float('nan')
+    spy_gmean_ann = spy_ann_return
     spy_ann_vol = spy_rets.std() * np.sqrt(252)
     spy_sharpe = (spy_rets.mean() * 252 - rf) / (spy_rets.std() * np.sqrt(252))
     spy_sortino = (spy_rets.mean() * 252 - rf) / (spy_rets[spy_rets < 0].std() * np.sqrt(252)) if len(spy_rets[spy_rets < 0]) > 0 else float('nan')
@@ -175,6 +182,8 @@ if spy_rets is not None:
     spy_stat = {
         'Risk Measure': 'SPY',
         'Annualized Return': spy_ann_return,
+        'Geometric Mean (daily)': spy_gmean_daily,
+        'Geometric Mean (annualized)': spy_gmean_ann,
         'Annualized Volatility': spy_ann_vol,
         'Sharpe Ratio': spy_sharpe,
         'Sortino Ratio': spy_sortino,
@@ -209,13 +218,25 @@ for asset in Y.columns:
     ann_std = Y[asset].std() * np.sqrt(252)
     print(f"{asset}: {ann_std:.2%}")
 
-ax = hc.plot_dendrogram(returns=Y,
-                         codependence='pearson',
-                         linkage='single',
-                         k=None,
-                         max_k=10,
-                         leaf_order=True,
-                         ax=None)
+# Plot dendrogram using Riskfolio and save the figure
+fig, ax = plt.subplots(figsize=(12, 8))
+hc.plot_dendrogram(returns=Y,
+                   codependence='pearson',
+                   linkage='ward',
+                   k=None,
+                   max_k=10,
+                   leaf_order=True,
+                   ax=ax)
+ax.set_title('Asset Dendrogram (pearson, single)')
+plt.tight_layout()
+output_path = os.path.join(os.path.dirname(__file__), 'dendrogram.png')
+plt.savefig(output_path, dpi=300)
+print(f"Dendrogram saved to {output_path}")
+try:
+    plt.show()
+except Exception:
+    # In non-interactive environments plt.show() may fail; ignore
+    pass
 
 # Building the portfolio object
 port = hc.HCPortfolio(returns=Y)
@@ -330,6 +351,9 @@ for rm, w in results.items():
         port_rets = Y.dot(weight_vals)
 
         ann_return = (1 + port_rets).prod() ** (252 / len(port_rets)) - 1
+        # Geometric mean (daily and annualized) for the portfolio returns
+        gmean_daily = (1 + port_rets).prod() ** (1 / len(port_rets)) - 1 if len(port_rets) > 0 else float('nan')
+        gmean_annualized = ann_return
         ann_vol = port_rets.std() * (252 ** 0.5)
         sharpe = (port_rets.mean() * 252 - rf) / (port_rets.std() * (252 ** 0.5))
         downside = port_rets[port_rets < 0]
@@ -371,6 +395,8 @@ for rm, w in results.items():
         stat = {
             'Risk Measure': rm,
             'Annualized Return': ann_return,
+            'Geometric Mean (daily)': gmean_daily,
+            'Geometric Mean (annualized)': gmean_annualized,
             'Annualized Volatility': ann_vol,
             'Sharpe Ratio': sharpe,
             'Sortino Ratio': sortino,
@@ -428,6 +454,8 @@ if spy_rets is not None:
     spy_rets = pd.Series(spy_rets).dropna()
 
     spy_ann_return = (1 + spy_rets).prod() ** (252 / len(spy_rets)) - 1
+    spy_gmean_daily = (1 + spy_rets).prod() ** (1 / len(spy_rets)) - 1 if len(spy_rets) > 0 else float('nan')
+    spy_gmean_ann = spy_ann_return
     spy_ann_vol = spy_rets.std() * np.sqrt(252)
     spy_sharpe = (spy_rets.mean() * 252 - rf) / (spy_rets.std() * np.sqrt(252))
     spy_sortino = (spy_rets.mean() * 252 - rf) / (spy_rets[spy_rets < 0].std() * np.sqrt(252)) if len(spy_rets[spy_rets < 0]) > 0 else float('nan')
@@ -467,6 +495,8 @@ if spy_rets is not None:
     spy_stat = {
         'Risk Measure': 'SPY',
         'Annualized Return': spy_ann_return,
+        'Geometric Mean (daily)': spy_gmean_daily,
+        'Geometric Mean (annualized)': spy_gmean_ann,
         'Annualized Volatility': spy_ann_vol,
         'Sharpe Ratio': spy_sharpe,
         'Sortino Ratio': spy_sortino,

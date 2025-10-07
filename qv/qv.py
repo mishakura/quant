@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from scipy import stats
 from tickers import tickers  # Import tickers from tickers.py
 
+## 1 JULY REBALANCE
 #TO-DO!
 # Database of yearly data to keep adding yearly data in the coming years(the maximum now is 5 years)
 
