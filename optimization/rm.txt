@@ -12,7 +12,7 @@ It looks only at the returns below a target (for example, 0% or the average retu
 and calculates the average shortfall — how far below that target you fall when you lose.
 How far below 0% are they? → 1%, 3%, 2%.
 FLPM = (1 + 3 + 2) / 3 = 2%
-✅ So your average loss when you lose is 2%.
+So your average loss when you lose is 2%.
 
 SLPM
 Like FLPM, but squares the shortfalls to punish large ones more heavily.
@@ -46,3 +46,11 @@ EDaR
 EDaR measures all drawdowns, but weights the big ones more 
 heavily — giving a smooth, tail-sensitive measure of 
 downside risk, and assets with higher EDaR get lower weights in HRP.
+
+UCi
+The depth and duration of drawdowns from past peaks.
+Portfolio A drops 20% but recovers in a week.
+Portfolio B drops 10% and stays low for 6 months.
+B has a higher UCI because it causes more prolonged stress.
+
+
