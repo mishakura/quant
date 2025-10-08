@@ -2,9 +2,8 @@ import numpy as np
 import openpyxl
 import pandas as pd
 
-
-""""Chequear con Aux si el calculo de cupones está correcto, quizás los intereses
-deben ser calculados bajo el residual."""
+### TODO: QUE BAJE ETFS DE YAHOO. 
+## Agregar renta de bonos.
 # Leer el archivo Excel
 input_file = 'bd_data.xlsx'
 df = pd.read_excel(input_file)

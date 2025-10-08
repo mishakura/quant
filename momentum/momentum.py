@@ -88,8 +88,8 @@ if len(momentum_scores) == 0:
 
 momentum_df = pd.DataFrame(list(momentum_scores.items()), columns=['Ticker', 'Momentum'])
 momentum_df = momentum_df.sort_values(by='Momentum', ascending=False)
-top_10pct_count = max(1, int(len(momentum_df) * 0.10))
-top_momentum_df = momentum_df.head(top_10pct_count).copy()
+top_20pct_count = max(1, int(len(momentum_df) * 0.20))
+top_momentum_df = momentum_df.head(top_20pct_count).copy()
 
 # Step 3: Calculate FIP for top 10% momentum stocks
 fip_scores = {}
