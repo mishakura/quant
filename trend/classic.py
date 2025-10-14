@@ -68,6 +68,9 @@ def add_trading_signals(df, initial_capital=100000, risk_pct=0.01):
     # Skip the first row since we need previous values
     for i in range(1, len(df)):
         prev_idx = i-1
+        # Defensive: skip signals for first 200 rows (Donchian bands not valid)
+        if prev_idx < 200:
+            continue
         
         # Check conditions against previous day's Donchian values (signal generation)
         # Long conditions
@@ -110,12 +113,12 @@ def add_trading_signals(df, initial_capital=100000, risk_pct=0.01):
                 entry_atr = df['atr'].iloc[prev_idx]  # ATR at signal generation
                 stop_loss = entry_price - (entry_atr * 3)
                 
-                # Calculate position size based on risk
+                # Calculate position size based on risk (use ATR only, not ATR*3)
                 risk_amount = prev_capital * risk_pct
-                risk_per_share = entry_price - stop_loss
+                risk_per_share = entry_atr  # ATR only
                 shares = int(risk_amount / risk_per_share)
                 position_value = shares * entry_price
-                
+
                 # Ensure we don't use more than available capital
                 if position_value > prev_capital:
                     shares = int(prev_capital / entry_price)
@@ -184,12 +187,12 @@ def add_trading_signals(df, initial_capital=100000, risk_pct=0.01):
                 entry_atr = df['atr'].iloc[prev_idx]  # ATR at signal generation
                 stop_loss = entry_price + (entry_atr * 3)
                 
-                # Calculate position size based on risk
+                # Calculate position size based on risk (use ATR only, not ATR*3)
                 risk_amount = prev_capital * risk_pct
-                risk_per_share = stop_loss - entry_price
+                risk_per_share = entry_atr  # ATR only
                 shares = int(risk_amount / risk_per_share)
                 position_value = shares * entry_price
-                
+
                 # Ensure we don't use more than available capital
                 if position_value > prev_capital:
                     shares = int(prev_capital / entry_price)

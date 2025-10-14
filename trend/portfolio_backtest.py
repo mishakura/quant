@@ -12,7 +12,7 @@ import scipy.stats
 from classic import add_indicators, calculate_performance
 
 class PortfolioBacktest:
-    def __init__(self, initial_capital=100000, risk_pct=0.005):
+    def __init__(self, initial_capital=100000, risk_pct=0.005, debug=False):
         """
         Initialize portfolio backtest with starting capital and risk percentage
         
@@ -23,30 +23,34 @@ class PortfolioBacktest:
         self.initial_capital = initial_capital
         self.capital = initial_capital
         self.risk_pct = risk_pct
+        self.stop_multiplier = 3  # multiplier for ATR to set stop distance (stop = price +/- atr * stop_multiplier)
+        self.debug = debug
+        self.daily_breakdown = []  # Collect per-day realized/unrealized breakdown for debugging
         self.positions = {}  # Current open positions {symbol: {contracts, entry_price, direction, entry_date, atr}}
         self.trades_history = []
         self.equity_curve = []
+        self.realized_equity_curve = []  # Track realized equity (capital only)
         self.dates = []
         self.symbols = []  # List of symbols in alphabetical order
         self.data_dict = {}  # Dictionary to store data for each symbol
         
-    def load_data(self, symbols, period="5y", interval="1d"):
+    def load_data(self, symbols, start_date="1930-01-01", end_date=None, interval="1d"):
         """
         Load data for all symbols
         
         Args:
             symbols (list): List of stock symbols
-            period (str): Period to download data for
+            start_date (str): Start date for data (YYYY-MM-DD)
+            end_date (str): End date for data (YYYY-MM-DD or None for today)
             interval (str): Data interval
         """
         print(f"Loading data for {len(symbols)} symbols...")
         self.symbols = sorted(symbols)  # Sort symbols alphabetically
-        
         for symbol in self.symbols:
             try:
-                print(f"Loading data for {symbol}...")
+                print(f"Downloading data for {symbol}...")
                 stock = yf.Ticker(symbol)
-                df = stock.history(period=period, interval=interval)
+                df = stock.history(start=start_date, end=end_date, interval=interval)
                 
                 # Ensure required columns exist
                 if 'Open' not in df.columns or 'High' not in df.columns or 'Low' not in df.columns or 'Close' not in df.columns:
@@ -65,17 +69,18 @@ class PortfolioBacktest:
                 df['short_entry_signal'] = False
                 df['short_exit_signal'] = False
                 df['signal'] = 0
-                
+
                 # Generate entry/exit signals based on Donchian Channel breakouts
                 for i in range(1, len(df)):
                     prev_idx = i - 1
-                    
+                    # Defensive: skip signals for first 200 days (insufficient Donchian history)
+                    if prev_idx < 200:
+                        continue
                     # Check conditions against previous day's Donchian values
                     long_entry = df['Close'].iloc[i] > df['dc_upper_200'].iloc[prev_idx]
                     long_exit = df['Close'].iloc[i] < df['dc_lower_100'].iloc[prev_idx]
                     short_entry = df['Close'].iloc[i] < df['dc_lower_200'].iloc[prev_idx]
                     short_exit = df['Close'].iloc[i] > df['dc_upper_100'].iloc[prev_idx]
-                    
                     df.loc[df.index[i], 'long_entry_signal'] = long_entry
                     df.loc[df.index[i], 'long_exit_signal'] = long_exit
                     df.loc[df.index[i], 'short_entry_signal'] = short_entry
@@ -103,22 +108,27 @@ class PortfolioBacktest:
         Args:
             price (float): Current asset price
             atr (float): Average True Range value
-            
         Returns:
             tuple: (contracts, usd_position)
         """
         if atr == 0 or np.isnan(atr):
             return 0, 0
-            
+
+        # Position sizing: risk per share = ATR (not ATR * stop_multiplier)
+        per_share_risk = atr
+
+        if per_share_risk == 0 or np.isnan(per_share_risk):
+            return 0, 0
+
         risk_amount = self.capital * self.risk_pct
-        contracts = risk_amount / atr
+        contracts = risk_amount / per_share_risk
         usd_position = contracts * price
-        
+
         # Ensure position doesn't exceed available capital
         if usd_position > self.capital:
             contracts = self.capital / price
             usd_position = self.capital
-            
+
         return contracts, usd_position
     
     def process_signals_for_date(self, current_date):
@@ -129,6 +139,7 @@ class PortfolioBacktest:
             current_date: Date to process signals for
         """
         daily_pnl = 0
+        capital_start = self.capital
         
         # Process each symbol in alphabetical order
         for symbol in self.symbols:
@@ -147,7 +158,7 @@ class PortfolioBacktest:
             current_idx = current_row.name
             
             # Skip if not enough history
-            if current_idx < 2:
+            if current_idx < 200:
                 continue
                 
             # Get previous row for signal checking
@@ -210,8 +221,6 @@ class PortfolioBacktest:
                     
                     # Remove position
                     del self.positions[symbol]
-                    
-                    print(f"{current_date}: Closed {direction} position in {symbol} at {current_price:.2f}, P&L: {pnl:.2f} ({exit_reason})")
             
             # Check for new entries
             if symbol not in self.positions:
@@ -232,8 +241,6 @@ class PortfolioBacktest:
                             'atr': current_atr,
                             'stop_loss': stop_loss
                         }
-                        
-                        print(f"{current_date}: Opened LONG position in {symbol} at {current_price:.2f}, Contracts: {contracts:.2f}, Stop: {stop_loss:.2f}")
                 
                 # Short entry signal
                 elif prev_row['short_entry_signal']:
@@ -252,37 +259,72 @@ class PortfolioBacktest:
                             'atr': current_atr,
                             'stop_loss': stop_loss
                         }
-                        
-                        print(f"{current_date}: Opened SHORT position in {symbol} at {current_price:.2f}, Contracts: {contracts:.2f}, Stop: {stop_loss:.2f}")
         
-        # Record daily portfolio value
+        # Record daily realized equity (capital only)
+        self.realized_equity_curve.append(self.capital)
+
+        # Record daily portfolio value (including unrealized P&L)
         portfolio_value = self.capital
-        
-        # Add unrealized P&L from open positions
+        unrealized_total = 0
+        positions_snapshot = []
         for symbol, position in self.positions.items():
-            # Get latest price for this symbol on this date
             df = self.data_dict[symbol]
             date_rows = df[df['Date'] == current_date]
-            
             if len(date_rows) > 0:
-                latest_price = date_rows.iloc[0]['Close']  # Use close for valuation
+                latest_price = date_rows.iloc[0]['Close']
                 contracts = position['contracts']
                 entry_price = position['entry_price']
                 direction = position['direction']
-                
-                # Calculate unrealized P&L
-                if direction == 1:  # Long position
+                if direction == 1:
                     unrealized_pnl = contracts * (latest_price - entry_price)
-                else:  # Short position
+                else:
                     unrealized_pnl = contracts * (entry_price - latest_price)
-                    
+                unrealized_total += unrealized_pnl
                 portfolio_value += unrealized_pnl
-        
-        # Record equity and date
+                positions_snapshot.append({
+                    'symbol': symbol,
+                    'contracts': contracts,
+                    'entry_price': entry_price,
+                    'latest_price': latest_price,
+                    'direction': 'LONG' if direction == 1 else 'SHORT',
+                    'unrealized_pnl': unrealized_pnl
+                })
+
+        # Sanity checks
+        capital_end = self.capital
+        # daily_pnl should equal change in capital
+        delta_capital = capital_end - capital_start
+        if abs(daily_pnl - delta_capital) > 1e-6:
+            if self.debug:
+                print(f"WARNING {current_date}: daily_pnl ({daily_pnl:.2f}) != capital change ({delta_capital:.2f})")
+
+        # Check that unrealized_total matches portfolio_value - capital
+        if abs(unrealized_total - (portfolio_value - capital_end)) > 1e-6:
+            if self.debug:
+                print(f"WARNING {current_date}: unrealized_total ({unrealized_total:.2f}) != portfolio_value - capital ({(portfolio_value - capital_end):.2f})")
+
+        # Append to equity and dates
         self.equity_curve.append(portfolio_value)
         self.dates.append(current_date)
-        
-        # Return daily portfolio value
+
+        # Save daily breakdown for debugging
+        self.daily_breakdown.append({
+            'date': current_date,
+            'capital_start': capital_start,
+            'capital_end': capital_end,
+            'daily_pnl': daily_pnl,
+            'unrealized_total': unrealized_total,
+            'portfolio_value': portfolio_value,
+            'open_positions': positions_snapshot
+        })
+
+        # Additional debug prints for large moves
+        if self.debug:
+            if abs(unrealized_total) > 0 and abs(unrealized_total) / max(1, capital_end) > 0.2:
+                print(f"LARGE UNREALIZED MOVE on {current_date}: unrealized={unrealized_total:.2f} ({unrealized_total/capital_end:.2%})")
+            if abs(daily_pnl) / max(1, capital_start) > 0.5:
+                print(f"LARGE REALIZED MOVE on {current_date}: daily_pnl={daily_pnl:.2f} ({daily_pnl/capital_start:.2%})")
+
         return portfolio_value
     
     def run_backtest(self):
@@ -359,6 +401,10 @@ class PortfolioBacktest:
         # Calculate kurtosis and skewness of returns
         kurtosis = scipy.stats.kurtosis(returns) if len(returns) > 3 else 0
         skewness = scipy.stats.skew(returns) if len(returns) > 2 else 0
+
+        # Calculate standard deviation of daily returns
+        stdev_daily = np.std(returns) if len(returns) > 1 else 0
+        stdev_annual = stdev_daily * np.sqrt(252)
         
         # Assuming 252 trading days in a year
         trading_days = len(returns)
@@ -417,6 +463,7 @@ class PortfolioBacktest:
             'sortino_ratio': sortino_ratio,
             'kurtosis': kurtosis,  # Added kurtosis
             'skewness': skewness,  # Added skewness
+            'stdev': stdev_annual,        # Now annualized stdev
             'start_date': start_date,  # Added start date
             'symbol_stats': symbol_stats,
             'initial_capital': self.initial_capital,
@@ -443,11 +490,54 @@ class PortfolioBacktest:
         else:
             start_date = stats['start_date']
         
-        # Helper function to convert datetime columns to timezone-naive
+        # Helper function to convert timezone-aware datetime columns to timezone-naive
         def convert_timezones(df):
+            # If not a DataFrame, return as-is
+            if not isinstance(df, pd.DataFrame):
+                return df
+
             for col in df.columns:
-                if pd.api.types.is_datetime64tz_dtype(df[col]):
-                    df[col] = df[col].dt.tz_localize(None)
+                try:
+                    dtype = df[col].dtype
+                    # pandas recommends checking isinstance with DatetimeTZDtype
+                    if hasattr(pd, 'DatetimeTZDtype') and isinstance(dtype, pd.DatetimeTZDtype):
+                        # If dtype is DatetimeTZDtype, convert to naive
+                        try:
+                            df[col] = df[col].dt.tz_convert('UTC').dt.tz_localize(None)
+                        except Exception:
+                            try:
+                                df[col] = df[col].dt.tz_localize(None)
+                            except Exception:
+                                pass
+                    # Fallback for older pandas versions / other timezone-aware representations
+                    elif pd.api.types.is_datetime64_any_dtype(dtype):
+                        # If tz-aware, convert via astype to datetime64[ns] after removing tz
+                        if getattr(df[col].dt, 'tz', None) is not None:
+                            df[col] = df[col].dt.tz_convert(None)
+                except Exception:
+                    # If column isn't datetime-like or conversion fails, skip
+                    continue
+            # Fallback: handle object columns that may contain timezone-aware python datetimes or pd.Timestamp
+            for col in df.columns:
+                if df[col].dtype == object:
+                    def _make_naive(x):
+                        try:
+                            if pd.isna(x):
+                                return x
+                            # For pandas Timestamp or datetime-like
+                            if hasattr(x, 'to_pydatetime'):
+                                py = x.to_pydatetime()
+                            else:
+                                py = x
+                            if hasattr(py, 'tzinfo') and py.tzinfo is not None:
+                                return py.replace(tzinfo=None)
+                            return py
+                        except Exception:
+                            return x
+                    try:
+                        df[col] = df[col].apply(_make_naive)
+                    except Exception:
+                        pass
             return df
         
         with pd.ExcelWriter(filename) as writer:
@@ -472,6 +562,7 @@ class PortfolioBacktest:
                     'Sortino Ratio',
                     'Kurtosis',  # Added kurtosis
                     'Skewness',  # Added skewness
+                    'Standard Deviation', # Added stdev
                     'Start Date'  # Added start date
                 ],
                 'Value': [
@@ -493,6 +584,7 @@ class PortfolioBacktest:
                     f"{stats['sortino_ratio']:.2f}",
                     f"{stats['kurtosis']:.4f}",  # Added kurtosis
                     f"{stats['skewness']:.4f}",  # Added skewness
+                    f"{stats['stdev']*100:.4f}%",     # stdev as percent (annualized)
                     start_date  # Use the timezone-naive start date
                 ]
             })
@@ -501,16 +593,25 @@ class PortfolioBacktest:
             # Trades history
             trades_df = pd.DataFrame(self.trades_history)
             if not trades_df.empty:
-                # Convert any timezone-aware datetime columns
                 trades_df = convert_timezones(trades_df)
+                # Ensure any timezone-aware datetimes are timezone-naive
+                for col in trades_df.columns:
+                    if pd.api.types.is_datetime64_any_dtype(trades_df[col]):
+                        try:
+                            trades_df[col] = trades_df[col].dt.tz_localize(None)
+                        except Exception:
+                            # If already naive or not tz-aware, leave as-is
+                            pass
                 trades_df.to_excel(writer, sheet_name='Trades', index=False)
             
-            # Equity curve
+            # Equity curve (full and realized)
+            min_len = min(len(self.dates), len(self.equity_curve[1:]), len(self.realized_equity_curve[1:]))
             equity_df = pd.DataFrame({
-                'Date': self.dates,
-                'Equity': self.equity_curve[1:]  # Skip the first value which is initial capital
+                'Date': self.dates[:min_len],
+                'Equity': self.equity_curve[1:][:min_len],  # Skip the first value which is initial capital
+                'Realized Equity': self.realized_equity_curve[1:][:min_len]  # Skip first value for alignment
             })
-            # Convert any timezone-aware datetime columns
+            # Convert any timezone-aware datetime columns and write
             equity_df = convert_timezones(equity_df)
             equity_df.to_excel(writer, sheet_name='Equity Curve', index=False)
             
@@ -545,37 +646,41 @@ class PortfolioBacktest:
         
         print(f"Backtest results exported to {filename}")
         
-        # Create equity curve chart
+        # Create equity curve chart (full and realized)
+        min_len = min(len(self.dates), len(self.equity_curve[1:]), len(self.realized_equity_curve[1:]))
         plt.figure(figsize=(12, 6))
-        plt.plot(self.dates, self.equity_curve[1:], label='Portfolio Equity')
+        plt.plot(self.dates[:min_len], self.equity_curve[1:][:min_len], label='Portfolio Equity')
+        plt.plot(self.dates[:min_len], self.realized_equity_curve[1:][:min_len], label='Realized Equity', linestyle='--')
         plt.title('Portfolio Backtest Equity Curve')
         plt.xlabel('Date')
         plt.ylabel('Equity ($)')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        
+
         # Save chart
         chart_filename = filename.replace('.xlsx', '_equity_curve.png')
         plt.savefig(chart_filename)
         plt.close()
-        
+
         print(f"Equity curve chart saved to {chart_filename}")
 
+def load_symbols_from_excel(filename="assets.xlsx"):
+    """Load tickers from a single-column Excel file in the same folder."""
+    df = pd.read_excel(filename)
+    # Assume first column contains tickers
+    tickers = df.iloc[:, 0].dropna().astype(str).tolist()
+    return tickers
 
 def main():
-    # List of symbols to include in the portfolio
-    # Using some popular stocks as an example
-    symbols = [
-        'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'NVDA', 'JPM',
-        'V', 'WMT', 'PG', 'DIS', 'NFLX', 'INTC', 'AMD', 'ADBE'
-    ]
+    # Load symbols from Excel file in the same folder
+    symbols = load_symbols_from_excel("assets.xlsx")
     
     # Initialize backtest with $100,000 and 0.5% risk
-    backtest = PortfolioBacktest(initial_capital=100000, risk_pct=0.005)
+    backtest = PortfolioBacktest(initial_capital=100000, risk_pct=0.0025)
     
-    # Load data for all symbols (5 years of history)
-    backtest.load_data(symbols, period="5y")
+    # Load data for all symbols (from 1930)
+    backtest.load_data(symbols, start_date="1930-01-01")
     
     # Run the backtest
     backtest.run_backtest()
