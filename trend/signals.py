@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 
 # Directory containing the CSVs (adjust if different)
-INDICATORS_DIR = Path(r"c:\Users\Sailing\Desktop\Work\py\quant\trend\indicators")
+INDICATORS_DIR = Path(os.path.join(os.path.dirname(__file__), "indicators"))
 
 def process_file(csv_path: Path, inplace: bool = True):
     df = pd.read_csv(csv_path, parse_dates=["Date"])
