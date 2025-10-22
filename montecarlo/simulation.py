@@ -14,7 +14,11 @@ volatility = params['Volatility']
 df_degrees = int(params['df'])  # degrees of freedom for fat-tailed t-distribution, convert to int
 inflation_mean = params['Inflation mean']   # Convert percentage to decimal
 inflation_vol = params['Inflation vol']  # Convert percentage to decimal
-num_simulations = 10000
+distribution = params['Distribution']  # 'Normal' or 'Fat'
+num_simulations = 5000
+
+# Debug: Print the distribution being used
+print(f"Using distribution: {distribution}")
 
 # Read cashflow data
 df_cashflow = pd.read_excel('data.xlsx', sheet_name='cashflow')
@@ -36,29 +40,34 @@ for cf in df_cashflow.itertuples():
         elif freq == 'm':
             cf_per_year[y] += amount * 12
 
-# Function to simulate one path
-def simulate_path(initial, years, mu, sigma, df, inflation_mu, inflation_sigma, cf_schedule):
+# Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation)
+def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution):
     amounts = [initial]
     # Simulate inflation path
-    inflation_returns = norm.rvs(loc=inflation_mu, scale=inflation_sigma, size=years)
     inflation_factors = [1.0]  # Year 0
     cum_inf = 1.0
-    for inf_ret in inflation_returns:
+    for y in range(1, years + 1):
+        inf_ret = np.random.normal(inflation_mu, inflation_sigma)
         cum_inf *= (1 + inf_ret)
         inflation_factors.append(cum_inf)
     
     for y in range(1, years + 1):
-        # Generate annual return
-        ret = t.rvs(df, loc=mu, scale=sigma)
+        # Generate annual return: normal if 'Normal', else t-distribution
+        if distribution == 'Normal':
+            ret = np.random.normal(mu_annual, sigma_annual)
+        else:
+            ret = t.rvs(df, loc=mu_annual, scale=sigma_annual)
         # Calculate amount after return
         new_amount = amounts[-1] * (1 + ret)
-        # Add cashflows for this year (inflated)
+        # Add cashflows at end of year, adjusted for inflation
         new_amount += cf_schedule[y] * inflation_factors[y]
+        # Cap at 0
+        new_amount = max(0, new_amount)
         amounts.append(new_amount)
     return amounts
 
 # Run simulations
-all_paths = [simulate_path(initial_amount, years, expected_return, volatility, df_degrees, inflation_mean, inflation_vol, cf_per_year) for _ in range(num_simulations)]
+all_paths = [simulate_path(initial_amount, years, expected_return, volatility, df_degrees, inflation_mean, inflation_vol, cf_per_year, distribution) for _ in range(num_simulations)]
 
 # Calculate percentiles for each year
 percentiles_over_time = []
@@ -87,8 +96,8 @@ plt.show()
 # Print final percentiles
 final_percentiles = percentiles_over_time[:, -1]
 print("Final Percentiles:")
-print(f"10th: {final_percentiles[0]:.2f}")
-print(f"25th: {final_percentiles[1]:.2f}")
-print(f"50th: {final_percentiles[2]:.2f}")
-print(f"75th: {final_percentiles[3]:.2f}")
-print(f"90th: {final_percentiles[4]:.2f}")
+print(f"{final_percentiles[0]:.2f}")
+print(f"{final_percentiles[1]:.2f}")
+print(f"{final_percentiles[2]:.2f}")
+print(f"{final_percentiles[3]:.2f}")
+print(f"{final_percentiles[4]:.2f}")
