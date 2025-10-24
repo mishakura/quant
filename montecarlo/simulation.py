@@ -40,7 +40,7 @@ for cf in df_cashflow.itertuples():
         elif freq == 'm':
             cf_per_year[y] += amount * 12
 
-# Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation)
+# Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation, stop adding cashflows if depleted)
 def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution):
     amounts = [initial]
     # Simulate inflation path
@@ -59,10 +59,11 @@ def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inf
             ret = t.rvs(df, loc=mu_annual, scale=sigma_annual)
         # Calculate amount after return
         new_amount = amounts[-1] * (1 + ret)
-        # Add cashflows at end of year, adjusted for inflation
-        new_amount += cf_schedule[y] * inflation_factors[y]
         # Cap at 0
         new_amount = max(0, new_amount)
+        # Add cashflows only if not depleted
+        if new_amount > 0:
+            new_amount += cf_schedule[y] * inflation_factors[y]
         amounts.append(new_amount)
     return amounts
 
@@ -93,11 +94,16 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
+# Calculate probability of success (e.g., final amount > 0)
+success_count = sum(1 for path in all_paths if path[-1] > 0)
+probability_success = (success_count / num_simulations) * 100
+
 # Print final percentiles
 final_percentiles = percentiles_over_time[:, -1]
 print("Final Percentiles:")
-print(f"{final_percentiles[0]:.2f}")
-print(f"{final_percentiles[1]:.2f}")
-print(f"{final_percentiles[2]:.2f}")
-print(f"{final_percentiles[3]:.2f}")
-print(f"{final_percentiles[4]:.2f}")
+print(f"10th: {final_percentiles[0]:.2f}")
+print(f"25th: {final_percentiles[1]:.2f}")
+print(f"50th: {final_percentiles[2]:.2f}")
+print(f"75th: {final_percentiles[3]:.2f}")
+print(f"90th: {final_percentiles[4]:.2f}")
+print(f"Probability of Success (final > 0): {probability_success:.2f}%")
