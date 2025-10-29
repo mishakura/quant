@@ -3,6 +3,14 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from scipy.stats import t, norm
 
+# Define a function to calculate maximum drawdown using numpy (vectorized)
+def max_drawdown(series):
+    if len(series) == 0:
+        return 0
+    peak = np.maximum.accumulate(series)
+    drawdown = (peak - series) / peak
+    return np.max(drawdown)
+
 # Read parameters from Excel file
 df_params = pd.read_excel('data.xlsx', sheet_name='info', header=None)
 params = dict(zip(df_params[0], df_params[1]))
@@ -43,6 +51,8 @@ for cf in df_cashflow.itertuples():
 # Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation, stop adding cashflows if depleted)
 def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution):
     amounts = [initial]
+    investment = [initial]  # Track investment balance separately (excluding cashflows)
+    returns = []
     # Simulate inflation path
     inflation_factors = [1.0]  # Year 0
     cum_inf = 1.0
@@ -57,6 +67,9 @@ def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inf
             ret = np.random.normal(mu_annual, sigma_annual)
         else:
             ret = t.rvs(df, loc=mu_annual, scale=sigma_annual)
+        returns.append(ret)
+        # Update investment balance (no cashflows added)
+        investment.append(investment[-1] * (1 + ret))
         # Calculate amount after return
         new_amount = amounts[-1] * (1 + ret)
         # Cap at 0
@@ -65,7 +78,7 @@ def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inf
         if new_amount > 0:
             new_amount += cf_schedule[y] * inflation_factors[y]
         amounts.append(new_amount)
-    return amounts
+    return amounts, returns, inflation_factors, investment  # Added investment
 
 # Run simulations
 all_paths = [simulate_path(initial_amount, years, expected_return, volatility, df_degrees, inflation_mean, inflation_vol, cf_per_year, distribution) for _ in range(num_simulations)]
@@ -73,7 +86,7 @@ all_paths = [simulate_path(initial_amount, years, expected_return, volatility, d
 # Calculate percentiles for each year
 percentiles_over_time = []
 for year in range(years + 1):
-    year_amounts = [path[year] for path in all_paths]
+    year_amounts = [path[0][year] for path in all_paths]  # Fixed: access amounts
     percentiles_over_time.append(np.percentile(year_amounts, [10, 25, 50, 75, 90]))
 
 # Transpose for plotting
@@ -94,9 +107,38 @@ plt.legend()
 plt.grid(True)
 plt.show()
 
+# New: Histogram of end balances for 95% results (between 2.5th and 97.5th percentiles)
+end_balances = [path[0][-1] for path in all_paths]  # Fixed: access amounts
+lower_bound = np.percentile(end_balances, 2.5)
+upper_bound = np.percentile(end_balances, 97.5)
+filtered_balances = [b for b in end_balances if lower_bound <= b <= upper_bound]
+
+plt.figure(figsize=(10, 6))
+plt.hist(filtered_balances, bins=50, edgecolor='black', alpha=0.7)
+plt.title('Portfolio End Balance Histogram (95% Results)')
+plt.xlabel('End Balance')
+plt.ylabel('Frequency')
+plt.grid(True)
+plt.show()
+
 # Calculate probability of success (e.g., final amount > 0)
-success_count = sum(1 for path in all_paths if path[-1] > 0)
+success_count = sum(1 for path in all_paths if path[0][-1] > 0)  # Fixed: access amounts
 probability_success = (success_count / num_simulations) * 100
+
+# New: Calculate maximum drawdown for each path (excluding cashflows)
+max_drawdowns = [max_drawdown(path[3]) for path in all_paths]  # path[3] is investment
+
+# Convert to negative percentages and cap at -100%
+max_drawdowns = [-min(1, dd) * 100 for dd in max_drawdowns]
+
+# Histogram of maximum drawdowns
+plt.figure(figsize=(10, 6))
+plt.hist(max_drawdowns, bins=50, edgecolor='black', alpha=0.7)
+plt.title('Maximum Drawdown Histogram (Excluding Cashflows)')
+plt.xlabel('Maximum Drawdown (%)')
+plt.ylabel('Frequency')
+plt.grid(True)
+plt.show()
 
 # Print final percentiles
 final_percentiles = percentiles_over_time[:, -1]
