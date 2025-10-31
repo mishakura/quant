@@ -41,7 +41,7 @@ end = '2025-12-30'
     "SMH", "VIG", "VEA", "GDX", "PSQ", "SH", "ARGT"
 ] """
 
-assets = ["SPY","IEMG","VEA","GLD","SLV","USO","BTC-USD","IJH","IWM"]
+assets = ["SPY","IEMG","VEA","GLD","SLV","USO","BTC-USD","IJH","IWM","YPF"]
 assets.sort()
 
 # Descargar precios de Yahoo Finance (auto_adjust=True para ajustar precios por splits/dividendos)
@@ -64,7 +64,7 @@ else:
     print("No se encontró el archivo indices.xlsx")
 
 # Combinar todos los activos (tickers + hojas del Excel)
-all_assets = assets
+all_assets = assets + extra_assets
 
 print("\nEarliest available date for each asset:")
 for asset in all_assets:
