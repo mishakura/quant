@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from tickers import tickers
 
 # Define date range
-end_date = "2025-10-01"
+end_date = "2025-11-01"
 start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=3*365)).strftime("%Y-%m-%d")
 
 # Download adjusted close prices for each ticker one by one

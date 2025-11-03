@@ -85,10 +85,12 @@ with pd.ExcelWriter(output_file) as writer:
             print()  # Blank line for separation
             
             # Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation, stop adding cashflows if depleted)
-            def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution, debug=False):
+            def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution, debug=False, fixed_returns=None):
                 amounts = [initial]
                 investment = [initial]  # Track investment balance separately (excluding cashflows)
                 returns = []
+                total_adjusted_contributions = 0.0
+                total_adjusted_withdrawals = 0.0
                 # Simulate inflation path
                 inflation_factors = [1.0]  # Year 0
                 cum_inf = 1.0
@@ -101,8 +103,10 @@ with pd.ExcelWriter(output_file) as writer:
                     print(f"Inflation factors: {inflation_factors}")
                 
                 for y in range(1, years + 1):
-                    # Generate annual return: normal if 'Normal', else t-distribution
-                    if distribution == 'Normal':
+                    # Generate annual return: normal if 'Normal', else t-distribution, or use fixed
+                    if fixed_returns is not None:
+                        ret = fixed_returns[y-1]
+                    elif distribution == 'Normal':
                         ret = np.random.normal(mu_annual, sigma_annual)
                     else:
                         ret = t.rvs(df, loc=mu_annual, scale=sigma_annual)
@@ -117,10 +121,14 @@ with pd.ExcelWriter(output_file) as writer:
                     if new_amount > 0:
                         adjusted_cf = cf_schedule[y] * inflation_factors[y]
                         new_amount += adjusted_cf
+                        if adjusted_cf > 0:
+                            total_adjusted_contributions += adjusted_cf
+                        elif adjusted_cf < 0:
+                            total_adjusted_withdrawals += adjusted_cf
                         if debug:
                             print(f"Year {y}: Nominal CF {cf_schedule[y]}, Inflation Factor {inflation_factors[y]:.4f}, Adjusted CF {adjusted_cf:.2f}, New Amount {new_amount:.2f}")
                     amounts.append(new_amount)
-                return amounts, returns, inflation_factors, investment  # Added investment
+                return amounts, returns, inflation_factors, investment, total_adjusted_contributions, total_adjusted_withdrawals
             
             # Run simulations (enable debug for first path)
             all_paths = []
@@ -171,13 +179,13 @@ with pd.ExcelWriter(output_file) as writer:
             success_count = sum(1 for path in all_paths if path[0][-1] > 0)  # Fixed: access amounts
             probability_success = (success_count / num_simulations) * 100
             
-            # New: Calculate maximum drawdown for each path (excluding cashflows)
-            max_drawdowns = [max_drawdown(path[3]) for path in all_paths]  # path[3] is investment
+            # New: Calculate maximum drawdown for each path (excluding cashflows)  # Removed as per request
+            # max_drawdowns = [max_drawdown(path[3]) for path in all_paths]  # path[3] is investment
             
-            # Convert to negative percentages and cap at -100%
-            max_drawdowns = [-min(1, dd) * 100 for dd in max_drawdowns]
+            # Convert to negative percentages and cap at -100%  # Removed as per request
+            # max_drawdowns = [-min(1, dd) * 100 for dd in max_drawdowns]
             
-            # Histogram of maximum drawdowns
+            # Histogram of maximum drawdowns  # Removed as per request
             # plt.figure(figsize=(10, 6))
             # plt.hist(max_drawdowns, bins=50, edgecolor='black', alpha=0.7)
             # plt.title('Maximum Drawdown Histogram (Excluding Cashflows)')
@@ -189,17 +197,72 @@ with pd.ExcelWriter(output_file) as writer:
             # Final percentiles
             final_percentiles = percentiles_over_time[:, -1]
             
+            # Compute additional metrics
+            all_contributions = [path[4] for path in all_paths]
+            all_withdrawals = [path[5] for path in all_paths]
+            avg_contributions = np.mean(all_contributions)
+            avg_withdrawals = -np.mean(all_withdrawals) if all_withdrawals else 0  # Make positive
+            
+            # Mean annual returns per path
+            mean_annual_returns = [np.mean(path[1]) for path in all_paths]
+            
+            # Compute percentiles of mean annual returns
+            return_percentiles = np.percentile(mean_annual_returns, [10, 25, 50, 75, 90])
+            
+            # Annual mean return and Var per percentile  # Removed as per request
+            # annual_mean_per_percentile = {}
+            # var_per_percentile = {}  # Removed as per request
+            # percentiles_list = [10, 25, 50, 75, 90]
+            # percentile_returns_data = []  # New: list to hold data for each path per percentile
+            # for p in percentiles_list:
+            #     threshold = np.percentile(end_balances, p)
+            #     indices = [i for i, eb in enumerate(end_balances) if eb <= threshold]
+            #     if indices:
+            #         returns_subset = [mean_annual_returns[i] for i in indices]
+            #         annual_mean_per_percentile[p] = np.mean(returns_subset)
+            #         # var_per_percentile[p] = np.var(returns_subset)  # Removed as per request
+            #         # New: add data for each path in this percentile group
+            #         for idx in indices:
+            #             percentile_returns_data.append({
+            #                 'Percentile': f'{p}th',
+            #                 'Path Index': idx,
+            #                 'Mean Annual Return': mean_annual_returns[idx]
+            #             })
+            #     else:
+            #         annual_mean_per_percentile[p] = 0
+            #         # var_per_percentile[p] = 0  # Removed as per request
+            
+            # New: Create DataFrame for percentile returns and write to Excel  # Removed as per request
+            # df_percentile_returns = pd.DataFrame(percentile_returns_data)
+            # df_percentile_returns.to_excel(writer, sheet_name=f'{sheet_name}_Returns', index=False)
+            
             # Collect stats data for Excel
             stats_data = {
-                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)'],
-                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success]
+                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)', 'Cashflow Total Contributions Adjusted', 'Total Withdrawals Adjusted', '10th Percentile of Mean Annual Returns', '25th Percentile of Mean Annual Returns', '50th Percentile of Mean Annual Returns', '75th Percentile of Mean Annual Returns', '90th Percentile of Mean Annual Returns'],
+                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success, avg_contributions, avg_withdrawals, return_percentiles[0], return_percentiles[1], return_percentiles[2], return_percentiles[3], return_percentiles[4]]
             }
+            
+            # Create DataFrame for stats
             df_stats = pd.DataFrame(stats_data)
+            
+            # New: Create DataFrame for percentiles time series
+            years_list = list(range(years + 1))
+            df_percentiles = pd.DataFrame({
+                'Year': years_list,
+                '10th Percentile': percentiles_over_time[0],
+                '25th Percentile': percentiles_over_time[1],
+                '50th Percentile': percentiles_over_time[2],
+                '75th Percentile': percentiles_over_time[3],
+                '90th Percentile': percentiles_over_time[4]
+            })
             
             # Write cashflow data to sheet
             df_cf.to_excel(writer, sheet_name=sheet_name, index=False, startrow=0)
             
             # Write stats data below cashflows
             df_stats.to_excel(writer, sheet_name=sheet_name, index=False, startrow=len(df_cf) + 2)
+            
+            # Write percentiles time series below stats
+            df_percentiles.to_excel(writer, sheet_name=sheet_name, index=False, startrow=len(df_cf) + len(df_stats) + 4)
 
 print(f"Output written to {output_file}")
