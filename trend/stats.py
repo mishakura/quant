@@ -97,6 +97,15 @@ def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='mai
             # Trade win rate: percentage of trades with positive PnL
             trade_win_rate = (sim_df['PnL_USD'] > 0).mean() * 100
             
+            # New stats for realized PnL per trade
+            pnl_usd_values = sim_df['PnL_USD'].values
+            if len(pnl_usd_values) > 0:
+                pnl_kurt = kurtosis(pnl_usd_values)
+                pnl_skw = skew(pnl_usd_values)
+            else:
+                pnl_kurt = np.nan
+                pnl_skw = np.nan
+
             # SPY stats - download using yfinance
             min_date = daily_agg['Date'].min()
             max_date = daily_agg['Date'].max()
@@ -175,8 +184,12 @@ def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='mai
         ws2.cell(11,2, max_win)
         ws2.cell(12,1, 'Mean Holding Days')
         ws2.cell(12,2, mean_holding_days)
+        ws2.cell(13,1, 'PnL Kurtosis')
+        ws2.cell(13,2, pnl_kurt)
+        ws2.cell(14,1, 'PnL Skewness')
+        ws2.cell(14,2, pnl_skw)
         # Return by year
-        row = 13
+        row = 15
         for year, ret in yearly_returns.items():
             ws2.cell(row,1, f'Return {year}')
             ws2.cell(row,2, ret)
