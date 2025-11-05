@@ -4,6 +4,8 @@ import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
 
+# In case of having data update every day (data, signals and indicators)
+
 data_folder = os.path.join(os.path.dirname(__file__), 'data')
 indicator_folder = os.path.join(os.path.dirname(__file__), 'indicators')
 os.makedirs(indicator_folder, exist_ok=True)
@@ -26,12 +28,14 @@ def add_signals_to_indicators(indicator_path, new_rows_only=True):
     df = pd.read_csv(indicator_path)
     df['Date'] = pd.to_datetime(df['Date'], format='mixed', errors='coerce')
     df = df.sort_values("Date").reset_index(drop=True)
-    # Find rows missing signals (Signal column missing or NaN)
-    if 'Signal' not in df.columns:
-        df['Signal'] = np.nan
-        df['Reason'] = ""
-        df['EntryPrice'] = np.nan
-        df['StopPrice'] = np.nan
+    # Ensure signal columns exist
+    for col in ['Signal', 'Reason', 'EntryPrice', 'StopPrice', 'ExitPrice', 'PnL_Percent']:
+        if col not in df.columns:
+            if col == 'Reason':
+                df[col] = ""
+            else:
+                df[col] = np.nan
+    # Find rows missing signals (Signal column NaN)
     missing_mask = df['Signal'].isna()
     if not missing_mask.any():
         print(f"{os.path.basename(indicator_path)}: All signals present.")
@@ -80,6 +84,8 @@ def add_signals_to_indicators(indicator_path, new_rows_only=True):
                 df.at[i, "Reason"] = "stop_loss"
                 df.at[i, "EntryPrice"] = np.nan
                 df.at[i, "StopPrice"] = np.nan
+                df.at[i, "ExitPrice"] = today_close
+                df.at[i, "PnL_Percent"] = ((today_close - entry_price) / entry_price) * 100
                 entry_price = None
                 entry_atr = None
             elif today_close < prev_min100:
@@ -88,6 +94,8 @@ def add_signals_to_indicators(indicator_path, new_rows_only=True):
                 df.at[i, "Reason"] = "exit_min100"
                 df.at[i, "EntryPrice"] = np.nan
                 df.at[i, "StopPrice"] = np.nan
+                df.at[i, "ExitPrice"] = today_close
+                df.at[i, "PnL_Percent"] = ((today_close - entry_price) / entry_price) * 100
                 entry_price = None
                 entry_atr = None
             else:

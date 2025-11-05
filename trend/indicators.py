@@ -2,6 +2,9 @@ import os
 import pandas as pd
 import numpy as np
 
+
+## Calculate indicators.
+
 data_folder = os.path.join(os.path.dirname(__file__), 'data')
 indicator_folder = os.path.join(os.path.dirname(__file__), 'indicators')
 os.makedirs(indicator_folder, exist_ok=True)

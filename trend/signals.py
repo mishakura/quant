@@ -3,6 +3,8 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
+## Calculate signals.
+
 # Directory containing the CSVs (adjust if different)
 INDICATORS_DIR = Path(os.path.join(os.path.dirname(__file__), "indicators"))
 
@@ -22,6 +24,8 @@ def process_file(csv_path: Path, inplace: bool = True):
     # New debug columns: maintain until trade closed
     df["EntryPrice"] = np.nan
     df["StopPrice"] = np.nan
+    df["ExitPrice"] = np.nan
+    df["PnL_Percent"] = np.nan
 
     in_trade = False
     entry_price = None
@@ -32,7 +36,7 @@ def process_file(csv_path: Path, inplace: bool = True):
         if i == 0:
             df.at[i, "Signal"] = 0
             df.at[i, "Reason"] = "no_prev"
-            # EntryPrice / StopPrice remain NaN
+            # EntryPrice / StopPrice / ExitPrice / PnL_Percent remain NaN
             continue
 
         today_close = float(df.at[i, "Close"])
@@ -49,7 +53,7 @@ def process_file(csv_path: Path, inplace: bool = True):
             else:
                 df.at[i, "Signal"] = 0
                 df.at[i, "Reason"] = "missing_prev"
-                # EntryPrice / StopPrice remain NaN
+                # EntryPrice / StopPrice / ExitPrice / PnL_Percent remain NaN
                 continue
 
         if not in_trade:
@@ -64,10 +68,11 @@ def process_file(csv_path: Path, inplace: bool = True):
                 df.at[i, "Reason"] = "enter"
                 df.at[i, "EntryPrice"] = entry_price
                 df.at[i, "StopPrice"] = stop_level
+                # ExitPrice / PnL_Percent remain NaN
             else:
                 df.at[i, "Signal"] = 0
                 df.at[i, "Reason"] = "no_long"
-                # EntryPrice / StopPrice remain NaN
+                # EntryPrice / StopPrice / ExitPrice / PnL_Percent remain NaN
         else:
             # If in trade, check stop-loss first (using ATR captured at entry)
             stop_level = entry_price - 3.0 * float(entry_atr)
@@ -78,6 +83,8 @@ def process_file(csv_path: Path, inplace: bool = True):
                 # trade closed -> clear debug columns (maintain until closed)
                 df.at[i, "EntryPrice"] = np.nan
                 df.at[i, "StopPrice"] = np.nan
+                df.at[i, "ExitPrice"] = today_close
+                df.at[i, "PnL_Percent"] = ((today_close - entry_price) / entry_price) * 100
                 entry_price = None
                 entry_atr = None
             # Then check Min100 exit (uses yesterday's Min100)
@@ -88,6 +95,8 @@ def process_file(csv_path: Path, inplace: bool = True):
                 # trade closed -> clear debug columns
                 df.at[i, "EntryPrice"] = np.nan
                 df.at[i, "StopPrice"] = np.nan
+                df.at[i, "ExitPrice"] = today_close
+                df.at[i, "PnL_Percent"] = ((today_close - entry_price) / entry_price) * 100
                 entry_price = None
                 entry_atr = None
             else:
@@ -96,6 +105,7 @@ def process_file(csv_path: Path, inplace: bool = True):
                 df.at[i, "Reason"] = "hold"
                 df.at[i, "EntryPrice"] = entry_price
                 df.at[i, "StopPrice"] = stop_level
+                # ExitPrice / PnL_Percent remain NaN
 
     # write back
     if inplace:
@@ -111,7 +121,7 @@ def process_all(directory: Path = INDICATORS_DIR):
         raise FileNotFoundError(f"{directory} does not exist")
     for p in directory.glob("*.csv"):
         try:
-            print(f"Processing {p.name} ...")
+            # no per-file print here anymore
             process_file(p, inplace=True)
         except Exception as e:
             print(f"Failed {p.name}: {e}")
