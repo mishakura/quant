@@ -1,0 +1,4 @@
+# Ignore specific folders inside trend
+trend/indicators/
+trend/trades/
+trend/data/
