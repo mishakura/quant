@@ -2,15 +2,21 @@ import pandas as pd
 import os
 import numpy as np
 import openpyxl
+from scipy.stats import kurtosis, skew
+import yfinance as yf
 
 def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='main.csv', output_file='daily_pnl.csv'):
     # Load data
-    sim_df = pd.read_csv(simulation_file, sep=';')  # Assuming semicolon separator
+    sim_df = pd.read_csv(simulation_file, sep=',')  # Changed to comma separator
     main_df = pd.read_csv(main_file)
     
-    # Convert dates with specified format
-    sim_df['EntryDate'] = pd.to_datetime(sim_df['EntryDate'], format='%d/%m/%Y')
-    sim_df['ExitDate'] = pd.to_datetime(sim_df['ExitDate'], format='%d/%m/%Y')
+    # Debug: Print columns to verify
+    print("Columns in sim_df:", sim_df.columns.tolist())
+    print("Columns in main_df:", main_df.columns.tolist())
+    
+    # Convert dates (remove specific format to let pandas infer ISO format)
+    sim_df['EntryDate'] = pd.to_datetime(sim_df['EntryDate'])
+    sim_df['ExitDate'] = pd.to_datetime(sim_df['ExitDate'])
     main_df['Date'] = pd.to_datetime(main_df['Date'])  # Assuming main.csv dates are already parseable
     
     # Sort main_df for efficiency
@@ -27,6 +33,7 @@ def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='mai
         entry_date = trade[1]['EntryDate']
         exit_date = trade[1]['ExitDate']
         usd_position = trade[1]['USD_Position']
+        capital_before = trade[1]['Capital_before']  # Use capital for normalizing
         
         if ticker in ticker_data:
             # Filter the pre-grouped data for this ticker and date range, and valid reasons
@@ -37,29 +44,99 @@ def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='mai
             ].sort_values('Date')
             
             if not trade_days.empty:
-                # Calculate daily PnL contribution and weight
+                # Calculate daily PnL contribution normalized by capital
                 closes = trade_days['Close'].values
                 dates = trade_days['Date'].values
                 for i in range(1, len(closes)):
                     daily_return = (closes[i] - closes[i-1]) / closes[i-1]
-                    daily_pnl_contrib = usd_position * daily_return
-                    daily_pnl_list.append({'Date': dates[i], 'Daily_PnL_Contrib': daily_pnl_contrib, 'Weight': usd_position})
+                    daily_pnl_contrib = (usd_position * daily_return) / capital_before  # Normalize by capital
+                    daily_pnl_list.append({'Date': dates[i], 'Daily_PnL_Contrib': daily_pnl_contrib})
         
         # Print progress
         progress = int((idx + 1) / total_trades * 100)
         print(f"Progress: {progress}%")
     
-    # Aggregate by date: weighted average return
+    # Aggregate by date: sum of normalized contributions
     if daily_pnl_list:
         daily_pnl_df = pd.DataFrame(daily_pnl_list)
         daily_agg = daily_pnl_df.groupby('Date').agg(
-            Total_Contrib=('Daily_PnL_Contrib', 'sum'),
-            Total_Weight=('Weight', 'sum')
+            Daily_PnL_Pct=('Daily_PnL_Contrib', 'sum')
         ).reset_index()
-        daily_agg['Daily_PnL_Pct'] = daily_agg['Total_Contrib'] / daily_agg['Total_Weight']
-        daily_agg = daily_agg[['Date', 'Daily_PnL_Pct']].sort_values('Date')
+        daily_agg = daily_agg.sort_values('Date')
         daily_agg.to_csv(output_file, index=False)
         print(f"Daily PnL CSV saved to {output_file}")
+        
+        # Calculate additional stats
+        returns = daily_agg['Daily_PnL_Pct'].values
+        n = len(returns)
+        if n > 0:
+            # Existing stats
+            annual_mean = returns.mean() * 252
+            annual_std = returns.std() * np.sqrt(252)
+            if np.all(1 + returns > 0):
+                geo_mean_daily = np.prod(1 + returns) ** (1 / n) - 1
+                annual_geo = (1 + geo_mean_daily) ** 252 - 1
+            else:
+                annual_geo = np.nan
+            cum_returns = np.cumprod(1 + returns)
+            peak = np.maximum.accumulate(cum_returns)
+            drawdown = (cum_returns - peak) / peak
+            max_dd = drawdown.min()
+            sharpe = annual_mean / annual_std if annual_std > 0 else 0
+            daily_agg['Year'] = daily_agg['Date'].dt.year
+            yearly_returns = daily_agg.groupby('Year')['Daily_PnL_Pct'].apply(lambda x: np.prod(1 + x) - 1 if np.all(1 + x > 0) else np.nan)
+            
+            # New stats
+            kurt = kurtosis(returns)
+            skw = skew(returns)
+            win_rate = np.mean(returns > 0) * 100  # Daily win rate
+            max_win = returns.max()
+            # Mean holding days from sim_df
+            sim_df['Holding_Days'] = (sim_df['ExitDate'] - sim_df['EntryDate']).dt.days
+            mean_holding_days = sim_df['Holding_Days'].mean()
+            # Trade win rate: percentage of trades with positive PnL
+            trade_win_rate = (sim_df['PnL_USD'] > 0).mean() * 100
+            
+            # SPY stats - download using yfinance
+            min_date = daily_agg['Date'].min()
+            max_date = daily_agg['Date'].max()
+            try:
+                spy_df = yf.download('^GSPC', start=min_date, end=max_date + pd.Timedelta(days=1))
+                spy_df = spy_df.reset_index()
+                spy_df['Date'] = pd.to_datetime(spy_df['Date'])
+                spy_df = spy_df.sort_values('Date')
+                spy_df['Daily_Return'] = spy_df['Close'].pct_change()
+                spy_returns = spy_df['Daily_Return'].dropna().values
+                if len(spy_returns) > 0:
+                    spy_annual_mean = spy_returns.mean() * 252
+                    spy_annual_std = spy_returns.std() * np.sqrt(252)
+                    if np.all(1 + spy_returns > 0):
+                        spy_geo_mean_daily = np.prod(1 + spy_returns) ** (1 / len(spy_returns)) - 1
+                        spy_annual_geo = (1 + spy_geo_mean_daily) ** 252 - 1
+                    else:
+                        spy_annual_geo = np.nan
+                    spy_cum_returns = np.cumprod(1 + spy_returns)
+                    spy_peak = np.maximum.accumulate(spy_cum_returns)
+                    spy_drawdown = (spy_cum_returns - spy_peak) / spy_peak
+                    spy_max_dd = spy_drawdown.min()
+                    spy_sharpe = spy_annual_mean / spy_annual_std if spy_annual_std > 0 else 0
+                    spy_kurt = kurtosis(spy_returns)
+                    spy_skw = skew(spy_returns)
+                    spy_win_rate = np.mean(spy_returns > 0) * 100  # Daily win rate for SPY
+                    spy_max_win = spy_returns.max()
+                    # SPY holding days not applicable, set to NaN
+                    spy_mean_holding_days = np.nan
+                    spy_trade_win_rate = np.nan  # No trades for SPY
+                    # SPY yearly returns
+                    spy_df['Year'] = spy_df['Date'].dt.year
+                    spy_yearly_returns = spy_df.groupby('Year')['Daily_Return'].apply(lambda x: np.prod(1 + x) - 1 if np.all(1 + x > 0) else np.nan)
+                else:
+                    spy_annual_mean = spy_annual_std = spy_annual_geo = spy_max_dd = spy_sharpe = spy_kurt = spy_skw = spy_win_rate = spy_max_win = spy_mean_holding_days = spy_trade_win_rate = np.nan
+                    spy_yearly_returns = {}
+            except Exception as e:
+                print(f"Error downloading SPY data: {e}")
+                spy_annual_mean = spy_annual_std = spy_annual_geo = spy_max_dd = spy_sharpe = spy_kurt = spy_skw = spy_win_rate = spy_max_win = spy_mean_holding_days = spy_trade_win_rate = np.nan
+                spy_yearly_returns = {}
         
         # Create Excel with sheets
         wb = openpyxl.Workbook()
@@ -72,56 +149,74 @@ def calculate_daily_pnl(simulation_file='simulation_results.csv', main_file='mai
         ws1.cell(1,1, 'Date')
         ws1.cell(1,2, 'Daily_PnL_Pct')
         
-        # Calculate stats
-        returns = daily_agg['Daily_PnL_Pct'].values
-        n = len(returns)
-        if n > 0:
-            # Annual mean return
-            annual_mean = returns.mean() * 252
-            # Annual stdev
-            annual_std = returns.std() * np.sqrt(252)
-            # Geometric mean annualized
-            if np.all(1 + returns > 0):
-                geo_mean_daily = np.prod(1 + returns) ** (1 / n) - 1
-                annual_geo = (1 + geo_mean_daily) ** 252 - 1
-            else:
-                annual_geo = np.nan  # Handle negative products
-            # Max drawdown
-            cum_returns = np.cumprod(1 + returns)
-            peak = np.maximum.accumulate(cum_returns)
-            drawdown = (cum_returns - peak) / peak
-            max_dd = drawdown.min()
-            # Sharpe ratio (assuming 0 risk-free rate)
-            sharpe = annual_mean / annual_std if annual_std > 0 else 0
-            # Return by year
-            daily_agg['Year'] = daily_agg['Date'].dt.year
-            yearly_returns = daily_agg.groupby('Year')['Daily_PnL_Pct'].apply(lambda x: np.prod(1 + x) - 1 if np.all(1 + x > 0) else np.nan)
-            
-            # Sheet 2: Stats
-            ws2 = wb.create_sheet("Stats")
-            ws2.cell(1,1, 'Stat')
-            ws2.cell(1,2, 'Value')
-            ws2.cell(2,1, 'Annual Mean Return')
-            ws2.cell(2,2, annual_mean)
-            ws2.cell(3,1, 'Annual Stdev')
-            ws2.cell(3,2, annual_std)
-            ws2.cell(4,1, 'Annual Geometric Mean')
-            ws2.cell(4,2, annual_geo)
-            ws2.cell(5,1, 'Max Drawdown')
-            ws2.cell(5,2, max_dd)
-            ws2.cell(6,1, 'Sharpe Ratio')
-            ws2.cell(6,2, sharpe)
-            # Return by year
-            row = 7
-            for year, ret in yearly_returns.items():
-                ws2.cell(row,1, f'Return {year}')
-                ws2.cell(row,2, ret)
-                row += 1
-            
-            wb.save('pnl_stats.xlsx')
-            print("Excel file with sheets saved as pnl_stats.xlsx")
-        else:
-            print("No returns to calculate stats.")
+        # Sheet 2: Strategy Stats
+        ws2 = wb.create_sheet("Strategy Stats")
+        ws2.cell(1,1, 'Stat')
+        ws2.cell(1,2, 'Value')
+        ws2.cell(2,1, 'Annual Mean Return')
+        ws2.cell(2,2, annual_mean)
+        ws2.cell(3,1, 'Annual Stdev')
+        ws2.cell(3,2, annual_std)
+        ws2.cell(4,1, 'Annual Geometric Mean')
+        ws2.cell(4,2, annual_geo)
+        ws2.cell(5,1, 'Max Drawdown')
+        ws2.cell(5,2, max_dd)
+        ws2.cell(6,1, 'Sharpe Ratio')
+        ws2.cell(6,2, sharpe)
+        ws2.cell(7,1, 'Kurtosis')
+        ws2.cell(7,2, kurt)
+        ws2.cell(8,1, 'Skewness')
+        ws2.cell(8,2, skw)
+        ws2.cell(9,1, 'Daily Win Rate (%)')
+        ws2.cell(9,2, win_rate)
+        ws2.cell(10,1, 'Trade Win Rate (%)')
+        ws2.cell(10,2, trade_win_rate)
+        ws2.cell(11,1, 'Max Win')
+        ws2.cell(11,2, max_win)
+        ws2.cell(12,1, 'Mean Holding Days')
+        ws2.cell(12,2, mean_holding_days)
+        # Return by year
+        row = 13
+        for year, ret in yearly_returns.items():
+            ws2.cell(row,1, f'Return {year}')
+            ws2.cell(row,2, ret)
+            row += 1
+        
+        # Sheet 3: SPY Stats
+        ws3 = wb.create_sheet("SPY Stats")
+        ws3.cell(1,1, 'Stat')
+        ws3.cell(1,2, 'Value')
+        ws3.cell(2,1, 'Annual Mean Return')
+        ws3.cell(2,2, spy_annual_mean)
+        ws3.cell(3,1, 'Annual Stdev')
+        ws3.cell(3,2, spy_annual_std)
+        ws3.cell(4,1, 'Annual Geometric Mean')
+        ws3.cell(4,2, spy_annual_geo)
+        ws3.cell(5,1, 'Max Drawdown')
+        ws3.cell(5,2, spy_max_dd)
+        ws3.cell(6,1, 'Sharpe Ratio')
+        ws3.cell(6,2, spy_sharpe)
+        ws3.cell(7,1, 'Kurtosis')
+        ws3.cell(7,2, spy_kurt)
+        ws3.cell(8,1, 'Skewness')
+        ws3.cell(8,2, spy_skw)
+        ws3.cell(9,1, 'Daily Win Rate (%)')
+        ws3.cell(9,2, spy_win_rate)
+        ws3.cell(10,1, 'Trade Win Rate (%)')
+        ws3.cell(10,2, spy_trade_win_rate)
+        ws3.cell(11,1, 'Max Win')
+        ws3.cell(11,2, spy_max_win)
+        ws3.cell(12,1, 'Mean Holding Days')
+        ws3.cell(12,2, spy_mean_holding_days)
+        # Return by year for SPY
+        row = 13
+        for year, ret in spy_yearly_returns.items():
+            ws3.cell(row,1, f'Return {year}')
+            ws3.cell(row,2, ret)
+            row += 1
+        
+        wb.save('pnl_stats.xlsx')
+        print("Excel file with sheets saved as pnl_stats.xlsx")
     else:
         print("No data to process.")
 

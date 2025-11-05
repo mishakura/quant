@@ -1,15 +1,16 @@
 import os
 import pandas as pd
 
-def merge_indicators_csvs(folder_path='indicators', output_file='main'
-'csv'):
+def merge_indicators_csvs(folder_path='indicators', output_file='main.csv'):
     all_data = []
-    for file in sorted(os.listdir(folder_path)):
-        if file.endswith('.csv'):
-            ticker = file.split('_')[0]  # Extract ticker before '_indicators'
-            df = pd.read_csv(os.path.join(folder_path, file))
-            df['ticker'] = ticker  # Add ticker column
-            all_data.append(df)
+    csv_files = [f for f in sorted(os.listdir(folder_path)) if f.endswith('.csv')]
+    total = len(csv_files)
+    for i, file in enumerate(csv_files):
+        ticker = file.split('_')[0]  # Extract ticker before '_indicators'
+        df = pd.read_csv(os.path.join(folder_path, file))
+        df['ticker'] = ticker  # Add ticker column
+        all_data.append(df)
+        print(f"Progress: {i+1}/{total} ({(i+1)/total*100:.1f}%)")
     
     if all_data:
         merged_df = pd.concat(all_data, ignore_index=True)

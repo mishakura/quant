@@ -14,8 +14,10 @@ def filter_trades():
         raise FileNotFoundError(f"{indicators_dir} does not exist")
     
     all_trades = []
+    csv_files = list(indicators_dir.glob("*.csv"))
+    total = len(csv_files)
     
-    for csv_path in indicators_dir.glob("*.csv"):
+    for i, csv_path in enumerate(csv_files):
         df = pd.read_csv(csv_path, parse_dates=['Date'])
         
         # Filter rows where Reason is 'enter', 'exit_min100', or 'stop_loss'
@@ -36,6 +38,8 @@ def filter_trades():
             all_trades.append(filtered_df)
         else:
             print(f"No trade rows in {csv_path.name}")
+        
+        print(f"Progress: {i+1}/{total} ({(i+1)/total*100:.1f}%)")
     
     # Create master CSV
     if all_trades:

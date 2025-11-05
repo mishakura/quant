@@ -9,7 +9,7 @@ TRADES_CSV = Path(__file__).parent.joinpath("trades", "master.csv")
 OUTPUT_CSV = Path(__file__).parent.joinpath("simulation_results.csv")
 
 START_CAPITAL = 100_000.0
-RISK = 0.0005  # 0.25%
+RISK = 0.0005  
 
 def load_trades(path: Path) -> pd.DataFrame:
     # read normally then explicitly convert Date to datetime to avoid dtype=str overriding parse_dates

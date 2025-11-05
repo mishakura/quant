@@ -119,10 +119,12 @@ def process_file(csv_path: Path, inplace: bool = True):
 def process_all(directory: Path = INDICATORS_DIR):
     if not directory.exists():
         raise FileNotFoundError(f"{directory} does not exist")
-    for p in directory.glob("*.csv"):
+    csv_files = list(directory.glob("*.csv"))
+    total = len(csv_files)
+    for i, p in enumerate(csv_files):
         try:
-            # no per-file print here anymore
             process_file(p, inplace=True)
+            print(f"Progress: {i+1}/{total} ({(i+1)/total*100:.1f}%)")
         except Exception as e:
             print(f"Failed {p.name}: {e}")
 
