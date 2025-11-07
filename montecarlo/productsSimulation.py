@@ -139,12 +139,21 @@ with pd.ExcelWriter(output_file) as writer:
             
             # Calculate percentiles for each year
             percentiles_over_time = []
+            lower_half_averages = []
+            upper_half_averages = []
             for year in range(years + 1):
                 year_amounts = [path[0][year] for path in all_paths]  # Fixed: access amounts
-                percentiles_over_time.append(np.percentile(year_amounts, [10, 25, 50, 75, 90]))
+                percentiles_over_time.append(np.percentile(year_amounts, [1, 10, 25, 50, 75, 90]))  # Added 1st percentile
+                median = np.percentile(year_amounts, 50)
+                lower_values = [x for x in year_amounts if x < median]  # Changed: strictly less than for lower half
+                upper_values = [x for x in year_amounts if x >= median]  # Changed: greater than or equal for upper half
+                lower_avg = np.mean(lower_values) if lower_values else median  # Fallback to median if empty
+                upper_avg = np.mean(upper_values) if upper_values else median  # Fallback to median if empty
+                lower_half_averages.append(lower_avg)
+                upper_half_averages.append(upper_avg)
             
             # Transpose for plotting
-            percentiles_over_time = np.array(percentiles_over_time).T  # Shape: (5, 11)
+            percentiles_over_time = np.array(percentiles_over_time).T  # Shape: (6, 11) now
             
             # Plot percentiles over time (commented out to avoid multiple popups)
             # plt.figure(figsize=(10, 6))
@@ -207,39 +216,19 @@ with pd.ExcelWriter(output_file) as writer:
             mean_annual_returns = [np.mean(path[1]) for path in all_paths]
             
             # Compute percentiles of mean annual returns
-            return_percentiles = np.percentile(mean_annual_returns, [10, 25, 50, 75, 90])
+            return_percentiles = np.percentile(mean_annual_returns, [1, 10, 25, 50, 75, 90])
             
-            # Annual mean return and Var per percentile  # Removed as per request
-            # annual_mean_per_percentile = {}
-            # var_per_percentile = {}  # Removed as per request
-            # percentiles_list = [10, 25, 50, 75, 90]
-            # percentile_returns_data = []  # New: list to hold data for each path per percentile
-            # for p in percentiles_list:
-            #     threshold = np.percentile(end_balances, p)
-            #     indices = [i for i, eb in enumerate(end_balances) if eb <= threshold]
-            #     if indices:
-            #         returns_subset = [mean_annual_returns[i] for i in indices]
-            #         annual_mean_per_percentile[p] = np.mean(returns_subset)
-            #         # var_per_percentile[p] = np.var(returns_subset)  # Removed as per request
-            #         # New: add data for each path in this percentile group
-            #         for idx in indices:
-            #             percentile_returns_data.append({
-            #                 'Percentile': f'{p}th',
-            #                 'Path Index': idx,
-            #                 'Mean Annual Return': mean_annual_returns[idx]
-            #             })
-            #     else:
-            #         annual_mean_per_percentile[p] = 0
-            #         # var_per_percentile[p] = 0  # Removed as per request
-            
-            # New: Create DataFrame for percentile returns and write to Excel  # Removed as per request
-            # df_percentile_returns = pd.DataFrame(percentile_returns_data)
-            # df_percentile_returns.to_excel(writer, sheet_name=f'{sheet_name}_Returns', index=False)
+            # Compute lower and upper half averages of mean annual returns
+            median_return = np.percentile(mean_annual_returns, 50)
+            lower_return_values = [x for x in mean_annual_returns if x <= median_return]
+            upper_return_values = [x for x in mean_annual_returns if x > median_return]
+            lower_return_avg = np.mean(lower_return_values) if lower_return_values else 0
+            upper_return_avg = np.mean(upper_return_values) if upper_return_values else 0
             
             # Collect stats data for Excel
             stats_data = {
-                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)', 'Cashflow Total Contributions Adjusted', 'Total Withdrawals Adjusted', '10th Percentile of Mean Annual Returns', '25th Percentile of Mean Annual Returns', '50th Percentile of Mean Annual Returns', '75th Percentile of Mean Annual Returns', '90th Percentile of Mean Annual Returns'],
-                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success, avg_contributions, avg_withdrawals, return_percentiles[0], return_percentiles[1], return_percentiles[2], return_percentiles[3], return_percentiles[4]]
+                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)', 'Cashflow Total Contributions Adjusted', 'Total Withdrawals Adjusted', '1st Percentile of Mean Annual Returns', '10th Percentile of Mean Annual Returns', '25th Percentile of Mean Annual Returns', '50th Percentile of Mean Annual Returns', '75th Percentile of Mean Annual Returns', '90th Percentile of Mean Annual Returns', 'Lower Half Average (1-49th) of Mean Annual Returns', 'Upper Half Average (51-100th) of Mean Annual Returns'],
+                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success, avg_contributions, avg_withdrawals, return_percentiles[0], return_percentiles[1], return_percentiles[2], return_percentiles[3], return_percentiles[4], return_percentiles[5], lower_return_avg, upper_return_avg]
             }
             
             # Create DataFrame for stats
@@ -249,11 +238,14 @@ with pd.ExcelWriter(output_file) as writer:
             years_list = list(range(years + 1))
             df_percentiles = pd.DataFrame({
                 'Year': years_list,
-                '10th Percentile': percentiles_over_time[0],
-                '25th Percentile': percentiles_over_time[1],
-                '50th Percentile': percentiles_over_time[2],
-                '75th Percentile': percentiles_over_time[3],
-                '90th Percentile': percentiles_over_time[4]
+                '1st Percentile': percentiles_over_time[0],  # Added
+                '10th Percentile': percentiles_over_time[1],
+                '25th Percentile': percentiles_over_time[2],
+                '50th Percentile': percentiles_over_time[3],
+                '75th Percentile': percentiles_over_time[4],
+                '90th Percentile': percentiles_over_time[5],
+                'Lower Half Average (1-49th)': lower_half_averages,
+                'Upper Half Average (51-100th)': upper_half_averages
             })
             
             # Write cashflow data to sheet
@@ -264,5 +256,80 @@ with pd.ExcelWriter(output_file) as writer:
             
             # Write percentiles time series below stats
             df_percentiles.to_excel(writer, sheet_name=sheet_name, index=False, startrow=len(df_cf) + len(df_stats) + 4)
-
+            
+            # Compute worst return and worst inflation (1st percentile)
+            if distribution == 'Normal':
+                worst_ret = norm.ppf(0.01, expected_return, volatility)
+            else:
+                worst_ret = t.ppf(0.01, df_degrees, loc=expected_return, scale=volatility)
+            worst_inf = norm.ppf(0.01, inflation_mean, inflation_vol)  # Worst inflation (1st percentile)
+            
+            # Simulate worst X years first for X=1 to 5 and append to same sheet
+            current_row = len(df_cf) + len(df_stats) + 4 + len(df_percentiles) + 2
+            for X in range(1, 6):
+                worst_paths = []
+                for i in range(num_simulations):
+                    amounts = [initial_amount]
+                    inflation_factors = [1.0]
+                    cum_inf = 1.0
+                    for y in range(1, years + 1):
+                        # Simulate inflation: worst for first X years, normal otherwise
+                        if y <= X:
+                            inf_ret = worst_inf
+                        else:
+                            inf_ret = np.random.normal(inflation_mean, inflation_vol)
+                        cum_inf *= (1 + inf_ret)
+                        inflation_factors.append(cum_inf)
+                        # Simulate return: worst for first X years, normal otherwise
+                        if y <= X:
+                            ret = worst_ret
+                        elif distribution == 'Normal':
+                            ret = np.random.normal(expected_return, volatility)
+                        else:
+                            ret = t.rvs(df_degrees, loc=expected_return, scale=volatility)
+                        # Update amount
+                        new_amount = amounts[-1] * (1 + ret)
+                        new_amount = max(0, new_amount)
+                        if new_amount > 0:
+                            adjusted_cf = cf_per_year[y] * inflation_factors[y]
+                            new_amount += adjusted_cf
+                        amounts.append(new_amount)
+                    worst_paths.append((amounts,))
+                
+                # Calculate percentiles for worst X scenario
+                percentiles_over_time = []
+                lower_half_averages = []
+                upper_half_averages = []
+                for year in range(years + 1):
+                    year_amounts = [path[0][year] for path in worst_paths]
+                    percentiles_over_time.append(np.percentile(year_amounts, [1, 10, 25, 50, 75, 90]))
+                    median = np.percentile(year_amounts, 50)
+                    lower_values = [x for x in year_amounts if x < median]
+                    upper_values = [x for x in year_amounts if x >= median]
+                    lower_avg = np.mean(lower_values) if lower_values else median
+                    upper_avg = np.mean(upper_values) if upper_values else median
+                    lower_half_averages.append(lower_avg)
+                    upper_half_averages.append(upper_avg)
+                
+                percentiles_over_time = np.array(percentiles_over_time).T
+                
+                # Create DataFrame for worst X percentiles time series
+                df_worst_percentiles = pd.DataFrame({
+                    'Year': years_list,
+                    '1st Percentile': percentiles_over_time[0],
+                    '10th Percentile': percentiles_over_time[1],
+                    '25th Percentile': percentiles_over_time[2],
+                    '50th Percentile': percentiles_over_time[3],
+                    '75th Percentile': percentiles_over_time[4],
+                    '90th Percentile': percentiles_over_time[5],
+                    'Lower Half Average (1-49th)': lower_half_averages,
+                    'Upper Half Average (51-100th)': upper_half_averages
+                })
+                
+                # Write title and DataFrame to same sheet
+                pd.DataFrame({'Title': [f'Worst {X} Years First']}).to_excel(writer, sheet_name=sheet_name, index=False, startrow=current_row, header=False)
+                current_row += 1
+                df_worst_percentiles.to_excel(writer, sheet_name=sheet_name, index=False, startrow=current_row)
+                current_row += len(df_worst_percentiles) + 2
+            
 print(f"Output written to {output_file}")
