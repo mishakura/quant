@@ -106,12 +106,13 @@ with pd.ExcelWriter(output_file) as writer:
                 
                 for y in range(1, years + 1):
                     # New: Deduct yearly fee at the start of the year
-                    fee_amount = amounts[-1] * fee
-                    total_fees += fee_amount
-                    amounts[-1] -= fee_amount
-                    investment[-1] -= fee_amount
-                    amounts[-1] = max(0, amounts[-1])  # Cap at 0 after fee deduction
-                    investment[-1] = max(0, investment[-1])
+                    if y > 1:  # Skip fee deduction for year 1 if you want initial amount untouched
+                        fee_amount = amounts[-1] * fee
+                        total_fees += fee_amount
+                        amounts[-1] -= fee_amount
+                        investment[-1] -= fee_amount
+                        amounts[-1] = max(0, amounts[-1])  # Cap at 0 after fee deduction
+                        investment[-1] = max(0, investment[-1])
                     
                     # Generate annual return: normal if 'Normal', else t-distribution, or use fixed
                     if fixed_returns is not None:
