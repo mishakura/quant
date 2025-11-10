@@ -35,6 +35,7 @@ with pd.ExcelWriter(output_file) as writer:
             inflation_mean = params['Inflation mean']   # Convert percentage to decimal
             inflation_vol = params['Inflation vol']  # Convert percentage to decimal
             distribution = params['Distribution']  # 'Normal' or 'Fat'
+            fee = float(params['Fee']) / 100  # New: Fee as percentage (divide by 100)
             num_simulations = 5000
             
             # Compute cumulative inflation factors using mean inflation
@@ -85,12 +86,13 @@ with pd.ExcelWriter(output_file) as writer:
             print()  # Blank line for separation
             
             # Function to simulate one path (use normal or t-distribution based on distribution, cap at 0, adjust cashflows for inflation, stop adding cashflows if depleted)
-            def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution, debug=False, fixed_returns=None):
+            def simulate_path(initial, years, mu_annual, sigma_annual, df, inflation_mu, inflation_sigma, cf_schedule, distribution, fee, debug=False, fixed_returns=None):
                 amounts = [initial]
                 investment = [initial]  # Track investment balance separately (excluding cashflows)
                 returns = []
                 total_adjusted_contributions = 0.0
                 total_adjusted_withdrawals = 0.0
+                total_fees = 0.0  # New: Track total fees paid
                 # Simulate inflation path
                 inflation_factors = [1.0]  # Year 0
                 cum_inf = 1.0
@@ -103,6 +105,14 @@ with pd.ExcelWriter(output_file) as writer:
                     print(f"Inflation factors: {inflation_factors}")
                 
                 for y in range(1, years + 1):
+                    # New: Deduct yearly fee at the start of the year
+                    fee_amount = amounts[-1] * fee
+                    total_fees += fee_amount
+                    amounts[-1] -= fee_amount
+                    investment[-1] -= fee_amount
+                    amounts[-1] = max(0, amounts[-1])  # Cap at 0 after fee deduction
+                    investment[-1] = max(0, investment[-1])
+                    
                     # Generate annual return: normal if 'Normal', else t-distribution, or use fixed
                     if fixed_returns is not None:
                         ret = fixed_returns[y-1]
@@ -128,13 +138,13 @@ with pd.ExcelWriter(output_file) as writer:
                         if debug:
                             print(f"Year {y}: Nominal CF {cf_schedule[y]}, Inflation Factor {inflation_factors[y]:.4f}, Adjusted CF {adjusted_cf:.2f}, New Amount {new_amount:.2f}")
                     amounts.append(new_amount)
-                return amounts, returns, inflation_factors, investment, total_adjusted_contributions, total_adjusted_withdrawals
+                return amounts, returns, inflation_factors, investment, total_adjusted_contributions, total_adjusted_withdrawals, total_fees  # Updated return
             
             # Run simulations (enable debug for first path)
             all_paths = []
             for i in range(num_simulations):
                 debug_flag = (i == 0)  # Debug only the first simulation
-                path = simulate_path(initial_amount, years, expected_return, volatility, df_degrees, inflation_mean, inflation_vol, cf_per_year, distribution, debug=debug_flag)
+                path = simulate_path(initial_amount, years, expected_return, volatility, df_degrees, inflation_mean, inflation_vol, cf_per_year, distribution, fee, debug=debug_flag)  # Updated call
                 all_paths.append(path)
             
             # Calculate percentiles for each year
@@ -209,8 +219,10 @@ with pd.ExcelWriter(output_file) as writer:
             # Compute additional metrics
             all_contributions = [path[4] for path in all_paths]
             all_withdrawals = [path[5] for path in all_paths]
+            all_fees = [path[6] for path in all_paths]  # New: Collect total fees
             avg_contributions = np.mean(all_contributions)
             avg_withdrawals = -np.mean(all_withdrawals) if all_withdrawals else 0  # Make positive
+            avg_fees = np.mean(all_fees)  # New: Average total fees
             
             # Mean annual returns per path
             mean_annual_returns = [np.mean(path[1]) for path in all_paths]
@@ -227,8 +239,8 @@ with pd.ExcelWriter(output_file) as writer:
             
             # Collect stats data for Excel
             stats_data = {
-                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)', 'Cashflow Total Contributions Adjusted', 'Total Withdrawals Adjusted', '1st Percentile of Mean Annual Returns', '10th Percentile of Mean Annual Returns', '25th Percentile of Mean Annual Returns', '50th Percentile of Mean Annual Returns', '75th Percentile of Mean Annual Returns', '90th Percentile of Mean Annual Returns', 'Lower Half Average (1-49th) of Mean Annual Returns', 'Upper Half Average (51-100th) of Mean Annual Returns'],
-                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success, avg_contributions, avg_withdrawals, return_percentiles[0], return_percentiles[1], return_percentiles[2], return_percentiles[3], return_percentiles[4], return_percentiles[5], lower_return_avg, upper_return_avg]
+                'Metric': ['Distribution', 'Final 10th Percentile', 'Final 25th Percentile', 'Final 50th Percentile', 'Final 75th Percentile', 'Final 90th Percentile', 'Probability of Success (%)', 'Cashflow Total Contributions Adjusted', 'Total Withdrawals Adjusted', 'Average Total Fees', '1st Percentile of Mean Annual Returns', '10th Percentile of Mean Annual Returns', '25th Percentile of Mean Annual Returns', '50th Percentile of Mean Annual Returns', '75th Percentile of Mean Annual Returns', '90th Percentile of Mean Annual Returns', 'Lower Half Average (1-49th) of Mean Annual Returns', 'Upper Half Average (51-100th) of Mean Annual Returns'],  # Added 'Average Total Fees'
+                'Value': [distribution, final_percentiles[0], final_percentiles[1], final_percentiles[2], final_percentiles[3], final_percentiles[4], probability_success, avg_contributions, avg_withdrawals, avg_fees, return_percentiles[0], return_percentiles[1], return_percentiles[2], return_percentiles[3], return_percentiles[4], return_percentiles[5], lower_return_avg, upper_return_avg]  # Added avg_fees
             }
             
             # Create DataFrame for stats
@@ -270,6 +282,11 @@ with pd.ExcelWriter(output_file) as writer:
                 worst_paths = []
                 for i in range(num_simulations):
                     amounts = [initial_amount]
+                    investment = [initial_amount]
+                    returns = []
+                    total_adjusted_contributions = 0.0
+                    total_adjusted_withdrawals = 0.0
+                    total_fees = 0.0  # New
                     inflation_factors = [1.0]
                     cum_inf = 1.0
                     for y in range(1, years + 1):
@@ -280,6 +297,15 @@ with pd.ExcelWriter(output_file) as writer:
                             inf_ret = np.random.normal(inflation_mean, inflation_vol)
                         cum_inf *= (1 + inf_ret)
                         inflation_factors.append(cum_inf)
+                        
+                        # New: Deduct fee
+                        fee_amount = amounts[-1] * fee
+                        total_fees += fee_amount
+                        amounts[-1] -= fee_amount
+                        investment[-1] -= fee_amount
+                        amounts[-1] = max(0, amounts[-1])
+                        investment[-1] = max(0, investment[-1])
+                        
                         # Simulate return: worst for first X years, normal otherwise
                         if y <= X:
                             ret = worst_ret
@@ -287,12 +313,19 @@ with pd.ExcelWriter(output_file) as writer:
                             ret = np.random.normal(expected_return, volatility)
                         else:
                             ret = t.rvs(df_degrees, loc=expected_return, scale=volatility)
+                        returns.append(ret)
+                        # Update investment
+                        investment.append(investment[-1] * (1 + ret))
                         # Update amount
                         new_amount = amounts[-1] * (1 + ret)
                         new_amount = max(0, new_amount)
                         if new_amount > 0:
                             adjusted_cf = cf_per_year[y] * inflation_factors[y]
                             new_amount += adjusted_cf
+                            if adjusted_cf > 0:
+                                total_adjusted_contributions += adjusted_cf
+                            elif adjusted_cf < 0:
+                                total_adjusted_withdrawals += adjusted_cf
                         amounts.append(new_amount)
                     worst_paths.append((amounts,))
                 
