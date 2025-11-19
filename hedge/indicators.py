@@ -1,31 +1,38 @@
 import pandas as pd
 import os
-import numpy as np
 
 # Paths
-data_dir = os.path.join(os.path.dirname(__file__), 'data')
-indicators_dir = os.path.join(os.path.dirname(__file__), 'indicators')
-os.makedirs(indicators_dir, exist_ok=True)
+base_dir = os.path.dirname(__file__)
+data_dir = os.path.join(base_dir, 'data')
+indicators_dir = os.path.join(base_dir, 'indicators')
 
-# Load VIX data
-vix_file = os.path.join(data_dir, 'VIX.csv')
-df = pd.read_csv(vix_file)
+try:
+    # Load VIX data (assuming VIX.csv has 'Date' and 'Price')
+    vix_file = os.path.join(data_dir, 'VIX.csv')
+    print(f"Loading VIX from {vix_file}")
+    vix_df = pd.read_csv(vix_file)
+    print("VIX columns:", vix_df.columns.tolist())  # Debug
+    vix_df['Date'] = pd.to_datetime(vix_df['Date'])
+    vix_df.set_index('Date', inplace=True)
+    vix_price = vix_df['Price']
+    print("VIX loaded")
 
-# Rename columns to match desired format
-df = df.rename(columns={'Date': 'observation_date', 'Close': 'VIXCLS'})
+    # Combine into a single DataFrame (only VIX_Price needed)
+    combined_df = pd.DataFrame({
+        'VIX_Price': vix_price
+    })
+    print("DataFrame combined")
 
-# Ensure observation_date is datetime
-df['observation_date'] = pd.to_datetime(df['observation_date'])
+    # Drop rows with NaN
+    combined_df.dropna(inplace=True)
+    print(f"After dropna, shape: {combined_df.shape}")
 
-# Sort by observation_date
-df = df.sort_values('observation_date').reset_index(drop=True)
+    # Output to CSV in indicators folder
+    output_file = os.path.join(indicators_dir, 'vix_curve_indicators.csv')
+    combined_df.to_csv(output_file)
+    print(f"Indicators computed and saved to {output_file}")
 
-# Compute indicators: Min of last 20 days and Max of last 10 days for VIX (shifted to exclude current day)
-df['VIX_20D_Min'] = df['VIXCLS'].rolling(window=20).min().shift(1)
-df['VIX_10D_Max'] = df['VIXCLS'].rolling(window=10).max().shift(1)
-
-# Save to indicators folder
-output_file = os.path.join(indicators_dir, 'VIX.csv')
-df.to_csv(output_file, index=False)
-
-print(f"Indicators computed and saved to {output_file}")
+except Exception as e:
+    print(f"Error: {e}")
+    import traceback
+    traceback.print_exc()

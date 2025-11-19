@@ -1,52 +1,60 @@
 import pandas as pd
 import os
-import numpy as np
 
 # Paths
-indicators_dir = os.path.join(os.path.dirname(__file__), 'indicators')
+base_dir = os.path.dirname(__file__)
+indicators_dir = os.path.join(base_dir, 'indicators')
+signals_file = os.path.join(indicators_dir, 'trading_signals.csv')
 
-# Load the VIX indicators data
-vix_file = os.path.join(indicators_dir, 'VIX.csv')
-df = pd.read_csv(vix_file)
+# Load the signals CSV
+df = pd.read_csv(signals_file)
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index('Date', inplace=True)
 
-# Identify trades: assign Trade_ID for consecutive Signal == 1
-df['Trade_ID'] = (df['Signal'] != df['Signal'].shift()).cumsum()
-
-# Compute final PnL for each trade: exit_price / entry_price - 1
-trade_pnl = df[df['Signal'] == 1].groupby('Trade_ID').agg(
-    entry_price=('VIXCLS', 'first'),
-    exit_price=('VIXCLS', 'last')
-)
-trade_pnl['Trade_PnL'] = trade_pnl['exit_price'] / trade_pnl['entry_price'] - 1
-
-# Drop existing Trade_PnL column if it exists
-df.drop('Trade_PnL', axis=1, errors='ignore', inplace=True)
-
-# Merge back to df
-df = df.merge(trade_pnl[['Trade_PnL']], left_on='Trade_ID', right_index=True, how='left')
-
-# Identify exit days: where Signal == 1 and next Signal == 0 or last row
-df['Exit_Day'] = (df['Signal'] == 1) & ((df['Signal'].shift(-1) == 0) | (df.index == len(df) - 1))
-
-# Trade return: Trade_PnL on exit days, else 0
-df['Trade_Return'] = np.where(df['Exit_Day'], df['Trade_PnL'], 0)
-
-# Fill NaN in Trade_Return with 0 to avoid NaN in capital
-df['Trade_Return'] = df['Trade_Return'].fillna(0)
-
-# Compute unrealized PnL daily
-entry_prices = df[df['Signal'] == 1].groupby('Trade_ID')['VIXCLS'].first()
-df['Entry_Price'] = df['Trade_ID'].map(entry_prices)
-df['Unrealized_PnL'] = np.where(df['Signal'] == 1, df['VIXCLS'] / df['Entry_Price'] - 1, 0)
-
-# Simulate capital starting from 10,000 USD
+# Initialize simulation variables
 initial_capital = 10000
-df['Capital'] = initial_capital * (1 + df['Trade_Return']).cumprod()
+capital = initial_capital
+position = 0  # Number of units held
+position_size_pct = 0.10  # 10% position sizing
 
-# Drop temporary columns
-df.drop(['Trade_ID', 'Entry_Price'], axis=1, inplace=True)
+# Lists to store results
+portfolio_values = []
+capitals = []
+positions = []
 
-# Save back to the same file
-df.to_csv(vix_file, index=False)
+# Simulate trading using VIX_Price
+for index, row in df.iterrows():
+    price = row['VIX_Price']  # Use VIX_Price for entry/exit
+    signal = row['Signal']
+    
+    if signal == 1 and position == 0:
+        # Enter long position with 10% of capital
+        position_value = capital * position_size_pct
+        position = position_value / price
+        capital -= position_value
+    elif signal == 0 and position > 0:
+        # Exit position
+        exit_value = position * price
+        capital += exit_value
+        position = 0
+    
+    # Calculate current portfolio value
+    portfolio_value = capital + (position * price)
+    
+    # Store results
+    capitals.append(capital)
+    positions.append(position)
+    portfolio_values.append(portfolio_value)
 
-print(f"Simulation completed and added to {vix_file}")
+# Add results to DataFrame
+df['Capital'] = capitals
+df['Position'] = positions
+df['Portfolio_Value'] = portfolio_values
+
+# Output to a new CSV in indicators folder
+output_file = os.path.join(indicators_dir, 'trading_simulation.csv')
+df.to_csv(output_file)
+
+print(f"Trading simulation completed and saved to {output_file}")
+print(f"Initial Capital: {initial_capital}")
+print(f"Final Portfolio Value: {portfolio_values[-1] if portfolio_values else initial_capital}")

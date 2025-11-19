@@ -1,27 +1,38 @@
 import pandas as pd
 import os
-import numpy as np
 
 # Paths
-indicators_dir = os.path.join(os.path.dirname(__file__), 'indicators')
+base_dir = os.path.dirname(__file__)
+indicators_dir = os.path.join(base_dir, 'indicators')
+csv_file = os.path.join(indicators_dir, 'vix_curve_indicators.csv')
 
-# Load the VIX indicators data
-vix_file = os.path.join(indicators_dir, 'VIX.csv')
-df = pd.read_csv(vix_file)
+# Load the CSV
+df = pd.read_csv(csv_file)
+df['Date'] = pd.to_datetime(df['Date'])
+df.set_index('Date', inplace=True)
 
-# Compute signal: 
-# Enter when VIX close price is below the last 20 days min (VIX_20D_Min is min of previous 20 days)
-# Close the trade when VIX close price is above the last 10 max days (VIX_10D_Max is max of previous 10 days)
-df['Signal'] = 0
-in_trade = False
-for i in range(len(df)):
-    if not in_trade and pd.notna(df.loc[i, 'VIX_20D_Min']) and df.loc[i, 'VIXCLS'] < df.loc[i, 'VIX_20D_Min']:
-        in_trade = True
-    if in_trade and pd.notna(df.loc[i, 'VIX_10D_Max']) and df.loc[i, 'VIXCLS'] > df.loc[i, 'VIX_10D_Max']:
-        in_trade = False
-    df.loc[i, 'Signal'] = 1 if in_trade else 0
+# Generate signals based on new rules: Entry when VIX_Price <= 13, Exit when VIX_Price >= 40
+in_position = False
+signals = []
 
-# Save back to the same file
-df.to_csv(vix_file, index=False)
+for index, row in df.iterrows():
+    vix_price = row['VIX_Price']
+    
+    if not in_position and vix_price <= 13:
+        signal = 1
+        in_position = True
+    elif in_position and vix_price >= 40:
+        signal = 0
+        in_position = False
+    else:
+        signal = 1 if in_position else 0
+    
+    signals.append(signal)
 
-print(f"Signals computed and added to {vix_file}")
+df['Signal'] = signals
+
+# Output to a new CSV in indicators folder
+output_file = os.path.join(indicators_dir, 'trading_signals.csv')
+df.to_csv(output_file)
+
+print(f"Trading signals generated and saved to {output_file}")
