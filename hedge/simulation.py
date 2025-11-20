@@ -1,75 +1,85 @@
 import pandas as pd
 import os
-import yfinance as yf
+import numpy as np
 
-# Paths
-base_dir = os.path.dirname(__file__)
-indicators_dir = os.path.join(base_dir, 'indicators')
-signals_file = os.path.join(indicators_dir, 'trading_signals.csv')
-
-# Load the signals CSV
-df = pd.read_csv(signals_file)
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index('Date', inplace=True)
-
-# Get VXX close prices using yfinance starting from 1930
-start_date = pd.to_datetime('1930-01-01')
-end_date = df.index.max() + pd.Timedelta(days=1)  # Include the end date
-vxx_data = yf.download('UVXY', start=start_date, end=end_date)['Close']
-
-# Find common dates between df and vxx_data
-common_dates = df.index.intersection(vxx_data.index)
-
-# Filter df to only include common dates
-df = df.loc[common_dates]
-
-# Add VXX close prices to df
-df['VXX_Close'] = vxx_data.loc[common_dates]
-
-# Initialize simulation variables
-initial_capital = 10000
-capital = initial_capital
-position = 0  # Number of units held
-position_size_pct = 0.10  # 10% position sizing
-
-# Lists to store results
-portfolio_values = []
-capitals = []
-positions = []
-
-# Simulate trading using VXX_Close
-for index, row in df.iterrows():
-    price = row['VXX_Close']  # Use VXX close price for entry/exit
-    signal = row['Signal']
+def simulate_portfolio():
+    signals_folder = './signals'
+    simulation_folder = './simulation'
+    os.makedirs(simulation_folder, exist_ok=True)
     
-    if signal == 1 and position == 0:
-        # Enter long position with 10% of capital
-        position_value = capital * position_size_pct
-        position = position_value / price
-        capital -= position_value
-    elif signal == 0 and position > 0:
-        # Exit position
-        exit_value = position * price
-        capital += exit_value
-        position = 0
+    # Load SPY signals
+    spy_file = 'SPY_signals.csv'
+    df = pd.read_csv(os.path.join(signals_folder, spy_file))
     
-    # Calculate current portfolio value
-    portfolio_value = capital + (position * price)
+    # Initialize portfolio (cash only, no long SPY)
+    initial_cash = 100000
+    cash = initial_cash
+    shares_short = 0
+    in_position = False
+    portfolio_values = [initial_cash]
     
-    # Store results
-    capitals.append(capital)
-    positions.append(position)
-    portfolio_values.append(portfolio_value)
+    for i in range(1, len(df)):
+        current_close = df.loc[i, 'close']
+        signal = df.loc[i, 'signal']
+        
+        # Adjust positions based on signal
+        if signal == 1 and not in_position:
+            # Enter short: use 10% of current cash to short SPY
+            cash_for_short = 0.1 * cash
+            shares_to_short = cash_for_short / current_close
+            cash += shares_to_short * current_close  # Shorting: cash increases from selling
+            shares_short += shares_to_short
+            in_position = True
+        elif signal == 0 and in_position:
+            # Exit short: buy back
+            cash -= shares_short * current_close
+            shares_short = 0
+            in_position = False
+        
+        # Calculate current portfolio value (cash + short position)
+        portfolio_value = cash - shares_short * current_close
+        portfolio_values.append(portfolio_value)
+    
+    df['portfolio_value'] = portfolio_values
+    df['daily_return'] = df['portfolio_value'].pct_change().fillna(0)
+    
+    # Calculate stats
+    final_value = portfolio_values[-1]
+    total_return = (final_value / initial_cash) - 1
+    num_days = len(portfolio_values) - 1
+    trading_days = 252
+    annualized_return = (final_value / initial_cash) ** (trading_days / num_days) - 1
+    
+    # Max drawdown
+    cumulative = (1 + df['daily_return']).cumprod()
+    peak = cumulative.expanding().max()
+    drawdown = (cumulative - peak) / peak
+    max_drawdown = drawdown.min()
+    
+    # Sharpe ratio (assume risk-free rate = 0)
+    mean_return = df['daily_return'].mean()
+    std_return = df['daily_return'].std()
+    sharpe_ratio = mean_return / std_return if std_return != 0 else 0
+    
+    # Create stats DataFrame
+    stats_df = pd.DataFrame({
+        'Strategy': ['Short_SPY_Strategy'],
+        'Final_Value': [final_value],
+        'Total_Return': [total_return],
+        'Annualized_Return': [annualized_return],
+        'Max_Drawdown': [max_drawdown],
+        'Sharpe_Ratio': [sharpe_ratio]
+    })
+    
+    # Save stats
+    stats_path = os.path.join(simulation_folder, 'strategy_stats.csv')
+    stats_df.to_csv(stats_path, index=False)
+    
+    # Save full simulation data
+    sim_path = os.path.join(simulation_folder, 'SPY_simulation_full.csv')
+    df.to_csv(sim_path, index=False)
+    
+    print(f'Simulation completed. Final portfolio value: ${final_value:.2f}. Stats saved to {stats_path}')
 
-# Add results to DataFrame
-df['Capital'] = capitals
-df['Position'] = positions
-df['Portfolio_Value'] = portfolio_values
-
-# Output to a new CSV in hedge folder
-output_file = os.path.join(base_dir, 'trading_simulation.csv')
-df.to_csv(output_file)
-
-print(f"Trading simulation completed and saved to {output_file}")
-print(f"Initial Capital: {initial_capital}")
-print(f"Final Portfolio Value: {portfolio_values[-1] if portfolio_values else initial_capital}")
+if __name__ == '__main__':
+    simulate_portfolio()

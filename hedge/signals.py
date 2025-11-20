@@ -1,25 +1,32 @@
 import pandas as pd
 import os
 
-# Paths
-base_dir = os.path.dirname(__file__)
-indicators_dir = os.path.join(base_dir, 'indicators')
-csv_file = os.path.join(indicators_dir, 'vxx_indicators.csv')
+def compute_signals():
+    indicators_folder = './indicators'
+    signals_folder = './signals'
+    os.makedirs(signals_folder, exist_ok=True)
+    
+    for file in os.listdir(indicators_folder):
+        if file.endswith('.csv'):
+            asset_name = file.replace('_indicators.csv', '')
+            df = pd.read_csv(os.path.join(indicators_folder, file))
+            
+            # Initialize signal column
+            df['signal'] = 0
+            
+            for i in range(len(df)):
+                ema8 = df.loc[i, 'EMA8']
+                ema32 = df.loc[i, 'EMA32']
+                
+                if ema8 < ema32:
+                    df.loc[i, 'signal'] = 1
+                else:
+                    df.loc[i, 'signal'] = 0
+            
+            # Save to signals folder
+            output_path = os.path.join(signals_folder, f'{asset_name}_signals.csv')
+            df.to_csv(output_path, index=False)
+            print(f'Signals computed for {asset_name}')
 
-# Load the CSV
-df = pd.read_csv(csv_file)
-df['Date'] = pd.to_datetime(df['Date'])
-df.set_index('Date', inplace=True)
-
-# Calculate EMA8 and EMA32 on VXX_Price
-df['EMA8'] = df['VXX_Price'].ewm(span=50).mean()
-df['EMA32'] = df['VXX_Price'].ewm(span=100).mean()
-
-# Generate signals: 1 when EMA8 > EMA32 (go long), 0 otherwise (close trade)
-df['Signal'] = (df['EMA8'] > df['EMA32']).astype(int)
-
-# Output to a new CSV in indicators folder
-output_file = os.path.join(indicators_dir, 'trading_signals.csv')
-df.to_csv(output_file)
-
-print(f"Trading signals generated and saved to {output_file}")
+if __name__ == '__main__':
+    compute_signals()

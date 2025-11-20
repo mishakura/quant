@@ -1,23 +1,39 @@
 import yfinance as yf
-import os
 import pandas as pd
+import os
 
-# Define the ticker symbol
-ticker = 'VXX'
+# List of tickers
+tickers = ['SPY']
 
-# Download historical data from 1930 onwards (note: VXX data starts in 2009)
-data = yf.download(ticker, start='1930-01-01')
-
-# Select Date and Close price
-data = data[['Close']].reset_index()
-data.columns = ['Date', 'Price']
-
-# Ensure the 'data' folder exists
-data_dir = os.path.join(os.path.dirname(__file__), 'data')
+# Base directory and data folder
+base_dir = os.path.dirname(__file__)
+data_dir = os.path.join(base_dir, 'data')
 os.makedirs(data_dir, exist_ok=True)
 
-# Save to CSV
-csv_path = os.path.join(data_dir, 'vxx_data.csv')
-data.to_csv(csv_path, index=False)
+# Download data for each ticker from 1930-01-01
+data_dict = {}
+for ticker in tickers:
+    try:
+        df = yf.download(ticker, start='1930-01-01')
+        if not df.empty:
+            df = df[['Open', 'High', 'Low', 'Close']].reset_index()
+            df.columns = ['Date', 'Open', 'High', 'Low', 'Close']
+            df['Date'] = pd.to_datetime(df['Date'])
+            data_dict[ticker] = df
+            print(f"Downloaded data for {ticker}: {len(df)} rows")
+        else:
+            print(f"No data for {ticker}")
+    except Exception as e:
+        print(f"Error downloading {ticker}: {e}")
 
-print(f"Data saved to {csv_path}")
+# Find the common starting date: the latest start date among all tickers
+start_dates = [df['Date'].min() for df in data_dict.values()]
+common_start = max(start_dates)
+print(f"Common starting date: {common_start}")
+
+# Slice each df from the common start and save to CSV
+for ticker, df in data_dict.items():
+    df_filtered = df[df['Date'] >= common_start].copy()
+    csv_path = os.path.join(data_dir, f'{ticker}.csv')
+    df_filtered.to_csv(csv_path, index=False)
+    print(f"Saved {ticker} data to {csv_path} ({len(df_filtered)} rows)")
