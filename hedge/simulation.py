@@ -1,5 +1,6 @@
 import pandas as pd
 import os
+import yfinance as yf
 
 # Paths
 base_dir = os.path.dirname(__file__)
@@ -10,6 +11,20 @@ signals_file = os.path.join(indicators_dir, 'trading_signals.csv')
 df = pd.read_csv(signals_file)
 df['Date'] = pd.to_datetime(df['Date'])
 df.set_index('Date', inplace=True)
+
+# Get VXX close prices using yfinance starting from 1930
+start_date = pd.to_datetime('1930-01-01')
+end_date = df.index.max() + pd.Timedelta(days=1)  # Include the end date
+vxx_data = yf.download('UVXY', start=start_date, end=end_date)['Close']
+
+# Find common dates between df and vxx_data
+common_dates = df.index.intersection(vxx_data.index)
+
+# Filter df to only include common dates
+df = df.loc[common_dates]
+
+# Add VXX close prices to df
+df['VXX_Close'] = vxx_data.loc[common_dates]
 
 # Initialize simulation variables
 initial_capital = 10000
@@ -22,9 +37,9 @@ portfolio_values = []
 capitals = []
 positions = []
 
-# Simulate trading using VIX_Price
+# Simulate trading using VXX_Close
 for index, row in df.iterrows():
-    price = row['VIX_Price']  # Use VIX_Price for entry/exit
+    price = row['VXX_Close']  # Use VXX close price for entry/exit
     signal = row['Signal']
     
     if signal == 1 and position == 0:
@@ -51,8 +66,8 @@ df['Capital'] = capitals
 df['Position'] = positions
 df['Portfolio_Value'] = portfolio_values
 
-# Output to a new CSV in indicators folder
-output_file = os.path.join(indicators_dir, 'trading_simulation.csv')
+# Output to a new CSV in hedge folder
+output_file = os.path.join(base_dir, 'trading_simulation.csv')
 df.to_csv(output_file)
 
 print(f"Trading simulation completed and saved to {output_file}")
