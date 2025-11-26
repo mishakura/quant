@@ -103,6 +103,22 @@ ultra_entry_index = None
 ultra_trade_returns = []
 ultra_holding_days = []
 
+# Initialize strategy returns, position, and prices for Pure VXX strategy
+data['pure_vxx_strategy_returns'] = 0.0
+data['pure_vxx_position'] = 0
+data['pure_vxx_entry_price'] = np.nan
+data['pure_vxx_exit_price'] = np.nan
+pure_vxx_entry_price = None
+pure_vxx_entry_index = None
+pure_vxx_trade_returns = []
+pure_vxx_holding_days = []
+
+# Initialize lists to store trade details for each strategy
+trade_details = []
+SH_trade_details = []
+ultra_trade_details = []
+pure_vxx_trade_details = []
+
 # Loop to simulate multi-day holds for both strategies
 for i in range(1, len(data)):
     # VXX/VIX strategy
@@ -119,6 +135,10 @@ for i in range(1, len(data)):
             data.loc[data.index[i], 'exit_price'] = exit_price
             trade_returns.append(ret)
             holding_days.append(i - entry_index)
+            # Add trade details
+            entry_date = data.index[entry_index]
+            exit_date = data.index[i]
+            trade_details.append({'Strategy': 'VXX/VIX', 'Entry_Date': entry_date, 'Exit_Date': exit_date, 'Return': ret})
             entry_price = None
             entry_index = None
         data.loc[data.index[i], 'position'] = 0
@@ -139,6 +159,10 @@ for i in range(1, len(data)):
             data.loc[data.index[i], 'SH_exit_price'] = SH_exit_price
             SH_trade_returns.append(ret)
             SH_holding_days.append(i - SH_entry_index)
+            # Add trade details
+            SH_entry_date = data.index[SH_entry_index]
+            SH_exit_date = data.index[i]
+            SH_trade_details.append({'Strategy': 'SH', 'Entry_Date': SH_entry_date, 'Exit_Date': SH_exit_date, 'Return': ret})
             SH_entry_price = None
             SH_entry_index = None
         data.loc[data.index[i], 'SH_position'] = 0
@@ -163,23 +187,54 @@ for i in range(1, len(data)):
             data.loc[data.index[i], 'ultra_strategy_returns'] = ret  # Note: This is still only on exit day, but we'll override later
             ultra_trade_returns.append(ret)
             ultra_holding_days.append(i - ultra_entry_index)
+            # Add trade details
+            ultra_entry_date = data.index[ultra_entry_index]
+            ultra_exit_date = data.index[i]
+            ultra_trade_details.append({'Strategy': 'Ultra Hedging', 'Entry_Date': ultra_entry_date, 'Exit_Date': ultra_exit_date, 'Return': ret})
             ultra_entry_price_VXX = None
             ultra_entry_price_SH = None
             ultra_entry_index = None
         data.loc[data.index[i], 'ultra_position'] = 0
     else:
         data.loc[data.index[i], 'ultra_position'] = data['ultra_position'].iloc[i-1]
+    
+    # Pure VXX strategy (100% VXX when signal, cash otherwise)
+    if data['buy_signal'].iloc[i] and data['pure_vxx_position'].iloc[i-1] == 0:  # Enter only if signal is True and not already in position
+        data.loc[data.index[i], 'pure_vxx_position'] = 1
+        pure_vxx_entry_price = data['asset_open'].iloc[i]
+        pure_vxx_entry_index = i
+        data.loc[data.index[i], 'pure_vxx_entry_price'] = pure_vxx_entry_price
+    elif data['pure_vxx_position'].iloc[i-1] == 1 and not data['buy_signal'].iloc[i]:  # Exit if position was held and signal is now False
+        if pure_vxx_entry_price is not None and pure_vxx_entry_index is not None:
+            pure_vxx_exit_price = data['asset_open'].iloc[i]
+            ret = (pure_vxx_exit_price / pure_vxx_entry_price) - 1  # Full return on VXX
+            data.loc[data.index[i], 'pure_vxx_strategy_returns'] = ret
+            data.loc[data.index[i], 'pure_vxx_exit_price'] = pure_vxx_exit_price
+            pure_vxx_trade_returns.append(ret)
+            pure_vxx_holding_days.append(i - pure_vxx_entry_index)
+            # Add trade details
+            pure_vxx_entry_date = data.index[pure_vxx_entry_index]
+            pure_vxx_exit_date = data.index[i]
+            pure_vxx_trade_details.append({'Strategy': 'Pure VXX', 'Entry_Date': pure_vxx_entry_date, 'Exit_Date': pure_vxx_exit_date, 'Return': ret})
+            pure_vxx_entry_price = None
+            pure_vxx_entry_index = None
+        data.loc[data.index[i], 'pure_vxx_position'] = 0
+    else:
+        data.loc[data.index[i], 'pure_vxx_position'] = data['pure_vxx_position'].iloc[i-1]
 
 # After the loop, calculate daily strategy returns for VXX/VIX
-data['allocation_VXX'] = 0.10 * data['position']
-data['allocation_SPY'] = 0.90 * data['position'] + 1.0 * (1 - data['position'])
+data['allocation_VXX'] = 0.20 * data['position']
+data['allocation_SPY'] = 0.80 * data['position'] + 1.0 * (1 - data['position'])
 data['strategy_returns'] = data['allocation_SPY'] * data['SPY_returns'] + data['allocation_VXX'] * data['VXX_returns']
 
 # After the loop, calculate daily strategy returns for Ultra Hedging
-data['ultra_allocation_VXX'] = 0.05 * data['ultra_position']
-data['ultra_allocation_SH'] = 0.05 * data['ultra_position']
-data['ultra_allocation_SPY'] = 0.90 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
+data['ultra_allocation_VXX'] = 0.10 * data['ultra_position']
+data['ultra_allocation_SH'] = 0.10 * data['ultra_position']
+data['ultra_allocation_SPY'] = 0.80 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
 data['ultra_strategy_returns'] = data['ultra_allocation_SPY'] * data['SPY_returns'] + data['ultra_allocation_VXX'] * data['VXX_returns'] + data['ultra_allocation_SH'] * data['SH_returns']
+
+# After the loop, calculate daily strategy returns for Pure VXX
+data['pure_vxx_strategy_returns'] = data['pure_vxx_position'] * data['VXX_returns']  # 100% VXX or 0
 
 # Handle initial NaN in returns for proper cumulative calculation
 data['strategy_returns'] = data['strategy_returns'].fillna(0)
@@ -187,11 +242,13 @@ data['SPY_returns'] = data['SPY_returns'].fillna(0)
 data['VXX_returns'] = data['VXX_returns'].fillna(0)
 data['SH_returns'] = data['SH_returns'].fillna(0)
 data['ultra_strategy_returns'] = data['ultra_strategy_returns'].fillna(0)
+data['pure_vxx_strategy_returns'] = data['pure_vxx_strategy_returns'].fillna(0)
 
 # Recalculate cumulative returns after filling NaN
 data['cum_strategy'] = (1 + data['strategy_returns']).cumprod()
 data['SPY_cum'] = (1 + data['SPY_returns']).cumprod()
 data['ultra_cum_strategy'] = (1 + data['ultra_strategy_returns']).cumprod()
+data['pure_vxx_cum_strategy'] = (1 + data['pure_vxx_strategy_returns']).cumprod()
 
 num_days = len(data)
 
@@ -255,6 +312,26 @@ else:
     ultra_max_loss = 0
     ultra_profit_factor = 0
 
+# Calculate additional stats for Pure VXX strategy
+if pure_vxx_trade_returns:
+    pure_vxx_total_trades = len(pure_vxx_trade_returns)
+    pure_vxx_win_rate = sum(1 for r in pure_vxx_trade_returns if r > 0) / pure_vxx_total_trades
+    pure_vxx_avg_return_per_trade = np.mean(pure_vxx_trade_returns)
+    pure_vxx_stdev_returns = np.std(pure_vxx_trade_returns)
+    pure_vxx_avg_holding_days = np.mean(pure_vxx_holding_days)
+    pure_vxx_max_win = max(pure_vxx_trade_returns)
+    pure_vxx_max_loss = min(pure_vxx_trade_returns)
+    pure_vxx_profit_factor = sum(r for r in pure_vxx_trade_returns if r > 0) / abs(sum(r for r in pure_vxx_trade_returns if r < 0)) if any(r < 0 for r in pure_vxx_trade_returns) else np.inf
+else:
+    pure_vxx_total_trades = 0
+    pure_vxx_win_rate = 0
+    pure_vxx_avg_return_per_trade = 0
+    pure_vxx_stdev_returns = 0
+    pure_vxx_avg_holding_days = 0
+    pure_vxx_max_win = 0
+    pure_vxx_max_loss = 0
+    pure_vxx_profit_factor = 0
+
 # Additional stats for SPY Buy-and-Hold
 SPY_daily_returns = data['SPY_returns']
 SPY_std_dev = SPY_daily_returns.std()
@@ -288,6 +365,17 @@ ultra_max_drawdown = ultra_drawdowns.min()
 ultra_avg_drawdown = ultra_drawdowns.mean()
 ultra_drawdown_std = ultra_drawdowns.std()
 
+# Additional stats for Pure VXX Strategy
+pure_vxx_daily_returns = data['pure_vxx_strategy_returns']
+pure_vxx_std_dev = pure_vxx_daily_returns.std()
+pure_vxx_skewness = pure_vxx_daily_returns.skew()
+pure_vxx_kurtosis = pure_vxx_daily_returns.kurt()
+pure_vxx_geometric_return = (data['pure_vxx_cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
+pure_vxx_drawdowns = (data['pure_vxx_cum_strategy'] / data['pure_vxx_cum_strategy'].cummax() - 1)
+pure_vxx_max_drawdown = pure_vxx_drawdowns.min()
+pure_vxx_avg_drawdown = pure_vxx_drawdowns.mean()
+pure_vxx_drawdown_std = pure_vxx_drawdowns.std()
+
 # Define performance metrics for stats_df
 SPY_total_return = data['SPY_cum'].iloc[-1] - 1
 SPY_annualized_return_calc = (data['SPY_cum'].iloc[-1]) ** (252 / num_days) - 1
@@ -304,15 +392,22 @@ ultra_annualized_return_calc = (data['ultra_cum_strategy'].iloc[-1]) ** (252 / n
 ultra_std_returns = data['ultra_strategy_returns'].std()
 ultra_sharpe_ratio = data['ultra_strategy_returns'].mean() / ultra_std_returns * np.sqrt(252) if ultra_std_returns != 0 else 0
 
+pure_vxx_total_return = data['pure_vxx_cum_strategy'].iloc[-1] - 1
+pure_vxx_annualized_return_calc = (data['pure_vxx_cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
+pure_vxx_std_returns = data['pure_vxx_strategy_returns'].std()
+pure_vxx_sharpe_ratio = data['pure_vxx_strategy_returns'].mean() / pure_vxx_std_returns * np.sqrt(252) if pure_vxx_std_returns != 0 else 0
+
 # Resample to monthly for drawdowns and returns
 monthly_SPY_cum = data['SPY_cum'].resample('M').last()
 monthly_VXX_cum = data['cum_strategy'].resample('M').last()
 monthly_ultra_cum = data['ultra_cum_strategy'].resample('M').last()
+monthly_pure_vxx_cum = data['pure_vxx_cum_strategy'].resample('M').last()
 
 # Monthly drawdowns
 monthly_SPY_drawdowns = (monthly_SPY_cum / monthly_SPY_cum.cummax() - 1)
 monthly_VXX_drawdowns = (monthly_VXX_cum / monthly_VXX_cum.cummax() - 1)
 monthly_ultra_drawdowns = (monthly_ultra_cum / monthly_ultra_cum.cummax() - 1)
+monthly_pure_vxx_drawdowns = (monthly_pure_vxx_cum / monthly_pure_vxx_cum.cummax() - 1)
 
 # Update drawdown stats to monthly
 SPY_max_drawdown = monthly_SPY_drawdowns.min()
@@ -327,57 +422,44 @@ ultra_max_drawdown = monthly_ultra_drawdowns.min()
 ultra_avg_drawdown = monthly_ultra_drawdowns.mean()
 ultra_drawdown_std = monthly_ultra_drawdowns.std()
 
+pure_vxx_max_drawdown = monthly_pure_vxx_drawdowns.min()
+pure_vxx_avg_drawdown = monthly_pure_vxx_drawdowns.mean()
+pure_vxx_drawdown_std = monthly_pure_vxx_drawdowns.std()
+
 # Annualize std dev
 SPY_std_dev_annualized = SPY_std_dev * np.sqrt(252)
 VXX_std_dev_annualized = VXX_std_dev * np.sqrt(252)
 ultra_std_dev_annualized = ultra_std_dev * np.sqrt(252)
+pure_vxx_std_dev_annualized = pure_vxx_std_dev * np.sqrt(252)
 
 # Monthly returns
 SPY_monthly_returns = data['SPY_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
 VXX_monthly_returns = data['strategy_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
 ultra_monthly_returns = data['ultra_strategy_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
+pure_vxx_monthly_returns = data['pure_vxx_strategy_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
 
 # Create DataFrame for monthly returns
 monthly_returns_df = pd.DataFrame({
     'Date': SPY_monthly_returns.index,
     'SPY Monthly Return': SPY_monthly_returns.values,
     'VXX/VIX Monthly Return': VXX_monthly_returns.values,
-    'Ultra Monthly Return': ultra_monthly_returns.values
+    'Ultra Monthly Return': ultra_monthly_returns.values,
+    'Pure VXX Monthly Return': pure_vxx_monthly_returns.values
 })
 
 # Export monthly returns to CSV
 monthly_returns_df.to_csv('monthly_returns.csv', index=False)
 
-# Create DataFrame for stats summary (updated with annualized std dev and monthly drawdowns, including Ultra Hedging)
-stats_df = pd.DataFrame({
-    'Strategy': ['SPY Buy-and-Hold', 'VXX/VIX Strategy', 'Ultra Hedging Strategy'],
-    'Total Return': [SPY_total_return, total_return, ultra_total_return],
-    'Annualized Return (Geometric)': [SPY_annualized_return_calc, annualized_return_calc, ultra_annualized_return_calc],
-    'Annualized Std Dev of Returns': [SPY_std_dev_annualized, VXX_std_dev_annualized, ultra_std_dev_annualized],
-    'Sharpe Ratio': [SPY_sharpe_ratio, sharpe_ratio, ultra_sharpe_ratio],
-    'Max Drawdown (Monthly)': [SPY_max_drawdown, VXX_max_drawdown, ultra_max_drawdown],
-    'Avg Drawdown (Monthly)': [SPY_avg_drawdown, VXX_avg_drawdown, ultra_avg_drawdown],
-    'Drawdown Std Dev (Monthly)': [SPY_drawdown_std, VXX_drawdown_std, ultra_drawdown_std],
-    'Skewness': [SPY_skewness, VXX_skewness, ultra_skewness],
-    'Kurtosis': [SPY_kurtosis, VXX_kurtosis, ultra_kurtosis]
-})
+# After all calculations, create a combined DataFrame for all trade returns
+all_trade_details = trade_details + SH_trade_details + ultra_trade_details + pure_vxx_trade_details
+trade_returns_df = pd.DataFrame(all_trade_details)
 
-# Export stats summary to CSV
-stats_df.to_csv('strategy_stats.csv', index=False)
-
-# Create DataFrame for drawdowns (time series)
-drawdowns_df = pd.DataFrame({
-    'Date': data.index,
-    'SPY Drawdown': SPY_drawdowns,
-    'VXX/VIX Drawdown': VXX_drawdowns,
-    'Ultra Drawdown': ultra_drawdowns
-})
-
-# Export drawdowns to CSV
-drawdowns_df.to_csv('strategy_drawdowns.csv', index=False)
+# Export to CSV
+trade_returns_df.to_csv('all_trade_returns.csv', index=False)
 
 print("Stats exported to strategy_stats.csv")
 print("Drawdowns exported to strategy_drawdowns.csv")
+print("All trade returns exported to all_trade_returns.csv")
 
 # Debug: Print entry and exit prices
 entries = data.dropna(subset=['entry_price'])
@@ -408,6 +490,7 @@ data['cum_buy_hold'] = (1 + data['VXX_returns']).cumprod()
 data['SH_cum_strategy'] = (1 + data['SH_strategy_returns']).cumprod()
 data['SPY_cum'] = (1 + data['SPY_returns']).cumprod()
 data['ultra_cum_strategy'] = (1 + data['ultra_strategy_returns']).cumprod()
+data['pure_vxx_cum_strategy'] = (1 + data['pure_vxx_strategy_returns']).cumprod()
 
 # Initial capital
 initial_capital = 10000
@@ -415,6 +498,7 @@ data['portfolio_value'] = initial_capital * data['cum_strategy']
 data['SH_portfolio_value'] = initial_capital * data['SH_cum_strategy']
 data['SPY_portfolio_value'] = initial_capital * data['SPY_cum']
 data['ultra_portfolio_value'] = initial_capital * data['ultra_cum_strategy']
+data['pure_vxx_portfolio_value'] = initial_capital * data['pure_vxx_cum_strategy']
 
 # Performance metrics for VXX/VIX
 total_return = data['cum_strategy'].iloc[-1] - 1
@@ -469,6 +553,23 @@ print(f"Sharpe Ratio: {ultra_sharpe_ratio:.2f}")
 print(f"Max Drawdown: {ultra_max_drawdown:.2%}")
 print(f"Final Portfolio Value: ${data['ultra_portfolio_value'].iloc[-1]:.2f}")
 
+# Performance metrics for Pure VXX
+pure_vxx_total_return = data['pure_vxx_cum_strategy'].iloc[-1] - 1
+pure_vxx_annualized_return = (data['pure_vxx_cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
+pure_vxx_std_returns = data['pure_vxx_strategy_returns'].std()
+if pure_vxx_std_returns == 0:
+    pure_vxx_sharpe_ratio = 0
+else:
+    pure_vxx_sharpe_ratio = data['pure_vxx_strategy_returns'].mean() / pure_vxx_std_returns * np.sqrt(252)
+pure_vxx_max_drawdown = (data['pure_vxx_cum_strategy'] / data['pure_vxx_cum_strategy'].cummax() - 1).min()
+
+print("=== Pure VXX Strategy ===")
+print(f"Total Return: {pure_vxx_total_return:.2%}")
+print(f"Annualized Return: {pure_vxx_annualized_return:.2%}")
+print(f"Sharpe Ratio: {pure_vxx_sharpe_ratio:.2f}")
+print(f"Max Drawdown: {pure_vxx_max_drawdown:.2%}")
+print(f"Final Portfolio Value: ${data['pure_vxx_portfolio_value'].iloc[-1]:.2f}")
+
 # Performance metrics for SPY Buy-and-Hold
 SPY_total_return = data['SPY_cum'].iloc[-1] - 1
 SPY_annualized_return = (data['SPY_cum'].iloc[-1]) ** (252 / num_days) - 1
@@ -494,6 +595,7 @@ print(f"Number of days buy_signal was True: {data['buy_signal'].sum()}")
 print(f"Number of days VXX/VIX position was held: {data['position'].sum()}")
 print(f"Number of days SH position was held: {data['SH_position'].sum()}")
 print(f"Number of days Ultra position was held: {data['ultra_position'].sum()}")
+print(f"Number of days Pure VXX position was held: {data['pure_vxx_position'].sum()}")
 
 # Additional stats for VXX/VIX
 print("=== VXX/VIX Trade Stats ===")
@@ -528,15 +630,27 @@ print(f"Max Win: {ultra_max_win:.2%}")
 print(f"Max Loss: {ultra_max_loss:.2%}")
 print(f"Profit Factor: {ultra_profit_factor:.2f}")
 
+# Additional stats for Pure VXX
+print("=== Pure VXX Trade Stats ===")
+print(f"Total Trades: {pure_vxx_total_trades}")
+print(f"Win Rate: {pure_vxx_win_rate:.2%}")
+print(f"Average Return per Trade: {pure_vxx_avg_return_per_trade:.2%}")
+print(f"Std Dev of Trade Returns: {pure_vxx_stdev_returns:.2%}")
+print(f"Average Holding Days per Position: {pure_vxx_avg_holding_days:.1f}")
+print(f"Max Win: {pure_vxx_max_win:.2%}")
+print(f"Max Loss: {pure_vxx_max_loss:.2%}")
+print(f"Profit Factor: {pure_vxx_profit_factor:.2f}")
+
 # Export data to CSV for debugging
 data.to_csv('debug_data.csv')
 
 print("Data exported to debug_data.csv")
 
-# Plot comparison of VXX/VIX Strategy, Ultra Hedging Strategy, and SPY Buy-and-Hold
+# Plot comparison of VXX/VIX Strategy, Ultra Hedging Strategy, Pure VXX Strategy, and SPY Buy-and-Hold
 plt.figure(figsize=(12, 6))
 plt.plot(data.index, data['cum_strategy'], label='VXX/VIX Strategy', linewidth=2)
 plt.plot(data.index, data['ultra_cum_strategy'], label='Ultra Hedging Strategy', linewidth=2)
+plt.plot(data.index, data['pure_vxx_cum_strategy'], label='Pure VXX Strategy', linewidth=2)
 plt.plot(data.index, data['SPY_cum'], label='SPY Buy-and-Hold', linewidth=2)
 plt.title('Cumulative Returns: Strategies vs SPY Buy-and-Hold')
 plt.xlabel('Date')
@@ -585,9 +699,15 @@ ultra_drawdowns = df.set_index('Date')['Ultra Drawdown']
 ultra_monthly_max_drawdowns = compute_within_month_max_drawdown(ultra_drawdowns)
 ultra_monthly_max_drawdowns.rename(columns={'Max Drawdown': 'Ultra Monthly Max Drawdown'}, inplace=True)
 
+# Process Pure VXX Drawdowns (within-month)
+pure_vxx_drawdowns = df.set_index('Date')['Pure VXX Drawdown']
+pure_vxx_monthly_max_drawdowns = compute_within_month_max_drawdown(pure_vxx_drawdowns)
+pure_vxx_monthly_max_drawdowns.rename(columns={'Max Drawdown': 'Pure VXX Monthly Max Drawdown'}, inplace=True)
+
 # Merge into one DataFrame
 monthly_drawdowns = pd.merge(SPY_monthly_max_drawdowns, VXX_monthly_max_drawdowns, on='Year-Month', how='outer')
 monthly_drawdowns = pd.merge(monthly_drawdowns, ultra_monthly_max_drawdowns, on='Year-Month', how='outer')
+monthly_drawdowns = pd.merge(monthly_drawdowns, pure_vxx_monthly_max_drawdowns, on='Year-Month', how='outer')
 
 # Save the result to a new CSV
 monthly_drawdowns.to_csv('monthly_drawdowns_only.csv', index=False)
