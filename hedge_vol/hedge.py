@@ -171,8 +171,8 @@ for i in range(1, len(data)):
         data.loc[data.index[i], 'ultra_position'] = data['ultra_position'].iloc[i-1]
 
 # After the loop, calculate daily strategy returns for VXX/VIX
-data['allocation_VXX'] = 0.2 * data['position']
-data['allocation_SPY'] = 0.8 * data['position'] + 1.0 * (1 - data['position'])
+data['allocation_VXX'] = 0.05 * data['position']
+data['allocation_SPY'] = 0.95 * data['position'] + 1.0 * (1 - data['position'])
 data['strategy_returns'] = data['allocation_SPY'] * data['SPY_returns'] + data['allocation_VXX'] * data['VXX_returns']
 
 # After the loop, calculate daily strategy returns for Ultra Hedging
