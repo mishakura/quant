@@ -171,14 +171,14 @@ for i in range(1, len(data)):
         data.loc[data.index[i], 'ultra_position'] = data['ultra_position'].iloc[i-1]
 
 # After the loop, calculate daily strategy returns for VXX/VIX
-data['allocation_VXX'] = 0.05 * data['position']
-data['allocation_SPY'] = 0.95 * data['position'] + 1.0 * (1 - data['position'])
+data['allocation_VXX'] = 0.10 * data['position']
+data['allocation_SPY'] = 0.90 * data['position'] + 1.0 * (1 - data['position'])
 data['strategy_returns'] = data['allocation_SPY'] * data['SPY_returns'] + data['allocation_VXX'] * data['VXX_returns']
 
 # After the loop, calculate daily strategy returns for Ultra Hedging
-data['ultra_allocation_VXX'] = 0.1 * data['ultra_position']
-data['ultra_allocation_SH'] = 0.1 * data['ultra_position']
-data['ultra_allocation_SPY'] = 0.8 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
+data['ultra_allocation_VXX'] = 0.05 * data['ultra_position']
+data['ultra_allocation_SH'] = 0.05 * data['ultra_position']
+data['ultra_allocation_SPY'] = 0.90 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
 data['ultra_strategy_returns'] = data['ultra_allocation_SPY'] * data['SPY_returns'] + data['ultra_allocation_VXX'] * data['VXX_returns'] + data['ultra_allocation_SH'] * data['SH_returns']
 
 # Handle initial NaN in returns for proper cumulative calculation
@@ -277,6 +277,17 @@ VXX_max_drawdown = VXX_drawdowns.min()
 VXX_avg_drawdown = VXX_drawdowns.mean()
 VXX_drawdown_std = VXX_drawdowns.std()
 
+# Additional stats for Ultra Hedging Strategy
+ultra_daily_returns = data['ultra_strategy_returns']
+ultra_std_dev = ultra_daily_returns.std()
+ultra_skewness = ultra_daily_returns.skew()
+ultra_kurtosis = ultra_daily_returns.kurt()
+ultra_geometric_return = (data['ultra_cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
+ultra_drawdowns = (data['ultra_cum_strategy'] / data['ultra_cum_strategy'].cummax() - 1)
+ultra_max_drawdown = ultra_drawdowns.min()
+ultra_avg_drawdown = ultra_drawdowns.mean()
+ultra_drawdown_std = ultra_drawdowns.std()
+
 # Define performance metrics for stats_df
 SPY_total_return = data['SPY_cum'].iloc[-1] - 1
 SPY_annualized_return_calc = (data['SPY_cum'].iloc[-1]) ** (252 / num_days) - 1
@@ -288,13 +299,20 @@ annualized_return_calc = (data['cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
 std_returns = data['strategy_returns'].std()
 sharpe_ratio = data['strategy_returns'].mean() / std_returns * np.sqrt(252) if std_returns != 0 else 0
 
+ultra_total_return = data['ultra_cum_strategy'].iloc[-1] - 1
+ultra_annualized_return_calc = (data['ultra_cum_strategy'].iloc[-1]) ** (252 / num_days) - 1
+ultra_std_returns = data['ultra_strategy_returns'].std()
+ultra_sharpe_ratio = data['ultra_strategy_returns'].mean() / ultra_std_returns * np.sqrt(252) if ultra_std_returns != 0 else 0
+
 # Resample to monthly for drawdowns and returns
 monthly_SPY_cum = data['SPY_cum'].resample('M').last()
 monthly_VXX_cum = data['cum_strategy'].resample('M').last()
+monthly_ultra_cum = data['ultra_cum_strategy'].resample('M').last()
 
 # Monthly drawdowns
 monthly_SPY_drawdowns = (monthly_SPY_cum / monthly_SPY_cum.cummax() - 1)
 monthly_VXX_drawdowns = (monthly_VXX_cum / monthly_VXX_cum.cummax() - 1)
+monthly_ultra_drawdowns = (monthly_ultra_cum / monthly_ultra_cum.cummax() - 1)
 
 # Update drawdown stats to monthly
 SPY_max_drawdown = monthly_SPY_drawdowns.min()
@@ -305,36 +323,43 @@ VXX_max_drawdown = monthly_VXX_drawdowns.min()
 VXX_avg_drawdown = monthly_VXX_drawdowns.mean()
 VXX_drawdown_std = monthly_VXX_drawdowns.std()
 
+ultra_max_drawdown = monthly_ultra_drawdowns.min()
+ultra_avg_drawdown = monthly_ultra_drawdowns.mean()
+ultra_drawdown_std = monthly_ultra_drawdowns.std()
+
 # Annualize std dev
 SPY_std_dev_annualized = SPY_std_dev * np.sqrt(252)
 VXX_std_dev_annualized = VXX_std_dev * np.sqrt(252)
+ultra_std_dev_annualized = ultra_std_dev * np.sqrt(252)
 
 # Monthly returns
 SPY_monthly_returns = data['SPY_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
 VXX_monthly_returns = data['strategy_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
+ultra_monthly_returns = data['ultra_strategy_returns'].resample('M').apply(lambda x: (1 + x).prod() - 1)
 
 # Create DataFrame for monthly returns
 monthly_returns_df = pd.DataFrame({
     'Date': SPY_monthly_returns.index,
     'SPY Monthly Return': SPY_monthly_returns.values,
-    'VXX/VIX Monthly Return': VXX_monthly_returns.values
+    'VXX/VIX Monthly Return': VXX_monthly_returns.values,
+    'Ultra Monthly Return': ultra_monthly_returns.values
 })
 
 # Export monthly returns to CSV
 monthly_returns_df.to_csv('monthly_returns.csv', index=False)
 
-# Create DataFrame for stats summary (updated with annualized std dev and monthly drawdowns)
+# Create DataFrame for stats summary (updated with annualized std dev and monthly drawdowns, including Ultra Hedging)
 stats_df = pd.DataFrame({
-    'Strategy': ['SPY Buy-and-Hold', 'VXX/VIX Strategy'],
-    'Total Return': [SPY_total_return, total_return],
-    'Annualized Return (Geometric)': [SPY_annualized_return_calc, annualized_return_calc],
-    'Annualized Std Dev of Returns': [SPY_std_dev_annualized, VXX_std_dev_annualized],
-    'Sharpe Ratio': [SPY_sharpe_ratio, sharpe_ratio],
-    'Max Drawdown (Monthly)': [SPY_max_drawdown, VXX_max_drawdown],
-    'Avg Drawdown (Monthly)': [SPY_avg_drawdown, VXX_avg_drawdown],
-    'Drawdown Std Dev (Monthly)': [SPY_drawdown_std, VXX_drawdown_std],
-    'Skewness': [SPY_skewness, VXX_skewness],
-    'Kurtosis': [SPY_kurtosis, VXX_kurtosis]
+    'Strategy': ['SPY Buy-and-Hold', 'VXX/VIX Strategy', 'Ultra Hedging Strategy'],
+    'Total Return': [SPY_total_return, total_return, ultra_total_return],
+    'Annualized Return (Geometric)': [SPY_annualized_return_calc, annualized_return_calc, ultra_annualized_return_calc],
+    'Annualized Std Dev of Returns': [SPY_std_dev_annualized, VXX_std_dev_annualized, ultra_std_dev_annualized],
+    'Sharpe Ratio': [SPY_sharpe_ratio, sharpe_ratio, ultra_sharpe_ratio],
+    'Max Drawdown (Monthly)': [SPY_max_drawdown, VXX_max_drawdown, ultra_max_drawdown],
+    'Avg Drawdown (Monthly)': [SPY_avg_drawdown, VXX_avg_drawdown, ultra_avg_drawdown],
+    'Drawdown Std Dev (Monthly)': [SPY_drawdown_std, VXX_drawdown_std, ultra_drawdown_std],
+    'Skewness': [SPY_skewness, VXX_skewness, ultra_skewness],
+    'Kurtosis': [SPY_kurtosis, VXX_kurtosis, ultra_kurtosis]
 })
 
 # Export stats summary to CSV
@@ -344,7 +369,8 @@ stats_df.to_csv('strategy_stats.csv', index=False)
 drawdowns_df = pd.DataFrame({
     'Date': data.index,
     'SPY Drawdown': SPY_drawdowns,
-    'VXX/VIX Drawdown': VXX_drawdowns
+    'VXX/VIX Drawdown': VXX_drawdowns,
+    'Ultra Drawdown': ultra_drawdowns
 })
 
 # Export drawdowns to CSV
@@ -507,11 +533,12 @@ data.to_csv('debug_data.csv')
 
 print("Data exported to debug_data.csv")
 
-# Plot comparison of VXX/VIX Strategy and SPY Buy-and-Hold
+# Plot comparison of VXX/VIX Strategy, Ultra Hedging Strategy, and SPY Buy-and-Hold
 plt.figure(figsize=(12, 6))
 plt.plot(data.index, data['cum_strategy'], label='VXX/VIX Strategy', linewidth=2)
+plt.plot(data.index, data['ultra_cum_strategy'], label='Ultra Hedging Strategy', linewidth=2)
 plt.plot(data.index, data['SPY_cum'], label='SPY Buy-and-Hold', linewidth=2)
-plt.title('Cumulative Returns: VXX/VIX Strategy vs SPY Buy-and-Hold')
+plt.title('Cumulative Returns: Strategies vs SPY Buy-and-Hold')
 plt.xlabel('Date')
 plt.ylabel('Cumulative Return')
 plt.legend()
@@ -526,22 +553,41 @@ df = pd.read_csv('strategy_drawdowns.csv')
 # Ensure 'Date' is in datetime format
 df['Date'] = pd.to_datetime(df['Date'])
 
-# Process SPY Drawdowns
-df_SPY = df[['Date', 'SPY Drawdown']].copy()
-df_SPY_drawdowns_only = df_SPY[df_SPY['SPY Drawdown'] < 0].copy()  # Filter for actual drawdowns (negative values)
-df_SPY_drawdowns_only['Year-Month'] = df_SPY_drawdowns_only['Date'].dt.to_period('M')
-monthly_SPY_drawdowns = df_SPY_drawdowns_only.groupby('Year-Month')['SPY Drawdown'].min().reset_index()  # Use min() to get the maximum (most negative) drawdown per month
-monthly_SPY_drawdowns.columns = ['Year-Month', 'SPY Monthly Max Drawdown']
+# Function to compute within-month max drawdown
+def compute_within_month_max_drawdown(series):
+    # Group by year-month
+    monthly_groups = series.groupby(series.index.to_period('M'))
+    results = []
+    for period, group in monthly_groups:
+        # Compute cumulative returns within the month (starting from 1.0)
+        monthly_cum = (1 + group).cumprod()
+        # Find the max cumulative return within the month
+        monthly_max = monthly_cum.cummax()
+        # Compute drawdowns within the month
+        monthly_drawdowns = monthly_cum / monthly_max - 1
+        # Get the max drawdown (most negative) in the month
+        max_drawdown = monthly_drawdowns.min()
+        results.append({'Year-Month': period, 'Max Drawdown': max_drawdown})
+    return pd.DataFrame(results)
 
-# Process VXX/VIX Drawdowns
-df_VXX = df[['Date', 'VXX/VIX Drawdown']].copy()
-df_VXX_drawdowns_only = df_VXX[df_VXX['VXX/VIX Drawdown'] < 0].copy()  # Filter for actual drawdowns (negative values)
-df_VXX_drawdowns_only['Year-Month'] = df_VXX_drawdowns_only['Date'].dt.to_period('M')
-monthly_VXX_drawdowns = df_VXX_drawdowns_only.groupby('Year-Month')['VXX/VIX Drawdown'].min().reset_index()  # Use min() to get the maximum (most negative) drawdown per month
-monthly_VXX_drawdowns.columns = ['Year-Month', 'VXX/VIX Monthly Max Drawdown']
+# Process SPY Drawdowns (within-month)
+SPY_drawdowns = df.set_index('Date')['SPY Drawdown']
+SPY_monthly_max_drawdowns = compute_within_month_max_drawdown(SPY_drawdowns)
+SPY_monthly_max_drawdowns.rename(columns={'Max Drawdown': 'SPY Monthly Max Drawdown'}, inplace=True)
+
+# Process VXX/VIX Drawdowns (within-month)
+VXX_drawdowns = df.set_index('Date')['VXX/VIX Drawdown']
+VXX_monthly_max_drawdowns = compute_within_month_max_drawdown(VXX_drawdowns)
+VXX_monthly_max_drawdowns.rename(columns={'Max Drawdown': 'VXX/VIX Monthly Max Drawdown'}, inplace=True)
+
+# Process Ultra Drawdowns (within-month)
+ultra_drawdowns = df.set_index('Date')['Ultra Drawdown']
+ultra_monthly_max_drawdowns = compute_within_month_max_drawdown(ultra_drawdowns)
+ultra_monthly_max_drawdowns.rename(columns={'Max Drawdown': 'Ultra Monthly Max Drawdown'}, inplace=True)
 
 # Merge into one DataFrame
-monthly_drawdowns = pd.merge(monthly_SPY_drawdowns, monthly_VXX_drawdowns, on='Year-Month', how='outer')
+monthly_drawdowns = pd.merge(SPY_monthly_max_drawdowns, VXX_monthly_max_drawdowns, on='Year-Month', how='outer')
+monthly_drawdowns = pd.merge(monthly_drawdowns, ultra_monthly_max_drawdowns, on='Year-Month', how='outer')
 
 # Save the result to a new CSV
 monthly_drawdowns.to_csv('monthly_drawdowns_only.csv', index=False)
