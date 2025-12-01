@@ -2,7 +2,7 @@ import yfinance as yf
 
 # Fetch NVDA data from the earliest available date to today (2025-11-26)
 nvda = yf.Ticker("SH")
-data = nvda.history(start="1900-01-01", end="2025-11-26")
+data = nvda.history(start="1900-01-01", end="2025-12-01")
 
 # Calculate total return using adjusted close prices (accounts for dividends and splits)
 initial_price = data['Close'].iloc[0]  # First available close price

@@ -16,7 +16,7 @@ So the correct dates to input are:
 2025-12-01
 """
 
-user_end_date = pd.Timestamp("2025-09-01")  # INPUT THE DATES LISTED ABOVE THE CODE
+user_end_date = pd.Timestamp("2025-12-01")  # INPUT THE DATES LISTED ABOVE THE CODE
 
 # 1. Check if input date is in the future
 today = pd.Timestamp(datetime.today().date())

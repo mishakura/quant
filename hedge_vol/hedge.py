@@ -2,11 +2,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from datetime import datetime
 
 # Define tickers
 tickers = ['^VIX', '^VIX3M', 'SPY', 'VXX', 'SH']
-start_date = '1990-01-01'  # Extended to get more data using VIX before VXX
-end_date = '2025-11-25'
+start_date = '2009-01-01'  # Changed: Start from VXX launch
+end_date = '2025-12-01'
 
 # Fetch data separately to avoid misalignment or missing data issues
 data_frames = []
@@ -15,11 +16,10 @@ for ticker in tickers:
         # Fetch VIX with Open and Close
         df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)[['Open', 'Close']].rename(columns={'Open': 'VIX_open', 'Close': 'VIX_close'})
     elif ticker == 'VXX':
-        # Read VXX data from CSV (columns: time,open,high,low,close,Weekly close,Monthly close,Quaterly close)
-        df = pd.read_csv('VXX.csv')
-        df['time'] = pd.to_datetime(df['time'])  # 'time' is already in date string format
-        df.set_index('time', inplace=True)
-        df = df[['open', 'close']].rename(columns={'open': 'VXX_open', 'close': 'VXX_close'})  # Select 'open' and 'close' columns
+        # Fetch VXX data from yfinance and update CSV
+        df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)[['Open', 'Close']].rename(columns={'Open': 'VXX_open', 'Close': 'VXX_close'})
+        # Save updated data to CSV for future use
+        df.to_csv('VXX.csv')
     elif ticker == 'SH':
         # Fetch SH with Open and Close
         df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)[['Open', 'Close']].rename(columns={'Open': 'SH_open', 'Close': 'SH_close'})
@@ -34,14 +34,14 @@ data = pd.concat(data_frames, axis=1, join='outer')
 # Rename columns for clarity (remove ^ prefix)
 data.columns = ['VIX_open', 'VIX_close', 'VIX3M', 'SPY', 'VXX_open', 'VXX_close', 'SH_open', 'SH_close']
 
-# Filter data to start from 2006-07-17, when VIX3M data begins
-data = data[data.index >= '2006-07-17']
+# Filter data to start from VXX launch date (2009-01-30)
+data = data[data.index >= '2009-01-30']
 
-# Create asset columns: Use VXX from 2009 onwards, VIX before
-data['asset_open'] = data['VXX_open'].fillna(data['VIX_open'])
-data['asset_close'] = data['VXX_close'].fillna(data['VIX_close'])
+# Use only VXX data (no VIX fallback)
+data['asset_open'] = data['VXX_open']
+data['asset_close'] = data['VXX_close']
 
-# Drop rows where asset data is missing (should not happen after fillna, but just in case)
+# Drop rows where VXX data is missing
 data.dropna(subset=['asset_open', 'asset_close'], inplace=True)
 
 # Drop any other rows with NaN in critical columns (e.g., SPY for realized_vol), but keep as much data as possible
@@ -223,14 +223,14 @@ for i in range(1, len(data)):
         data.loc[data.index[i], 'pure_vxx_position'] = data['pure_vxx_position'].iloc[i-1]
 
 # After the loop, calculate daily strategy returns for VXX/VIX
-data['allocation_VXX'] = 0.20 * data['position']
-data['allocation_SPY'] = 0.80 * data['position'] + 1.0 * (1 - data['position'])
+data['allocation_VXX'] = 0.5 * data['position']
+data['allocation_SPY'] = 0.95 * data['position'] + 1.0 * (1 - data['position'])
 data['strategy_returns'] = data['allocation_SPY'] * data['SPY_returns'] + data['allocation_VXX'] * data['VXX_returns']
 
 # After the loop, calculate daily strategy returns for Ultra Hedging
-data['ultra_allocation_VXX'] = 0.10 * data['ultra_position']
-data['ultra_allocation_SH'] = 0.10 * data['ultra_position']
-data['ultra_allocation_SPY'] = 0.80 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
+data['ultra_allocation_VXX'] = 0.5 * data['ultra_position']
+data['ultra_allocation_SH'] = 0.5 * data['ultra_position']
+data['ultra_allocation_SPY'] = 0.90 * data['ultra_position'] + 1.0 * (1 - data['ultra_position'])
 data['ultra_strategy_returns'] = data['ultra_allocation_SPY'] * data['SPY_returns'] + data['ultra_allocation_VXX'] * data['VXX_returns'] + data['ultra_allocation_SH'] * data['SH_returns']
 
 # After the loop, calculate daily strategy returns for Pure VXX

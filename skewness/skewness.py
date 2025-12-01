@@ -82,7 +82,7 @@ def main():
     # Fix the date range - use current date as end date
     from datetime import datetime, timedelta
     
-    end = '2025-11-01'  # Today's date
+    end = '2025-12-01'  # Today's date
     start = '2022-01-01'  # Go back further to ensure enough history
     window = 252  # Approx 12 months of trading days
     
@@ -98,9 +98,12 @@ def main():
             print(f"Downloading {i}/{len(tickers)}: {ticker}")
             ticker_data = yf.download(ticker, start=start, end=end, progress=False, auto_adjust=False)
             
-            if not ticker_data.empty:
-                # Extract the Adjusted Close prices and save as a Series
+            if not ticker_data.empty and 'Adj Close' in ticker_data.columns:
+                # Extract the Adjusted Close prices and flatten to ensure it's 1D
                 adj_close = ticker_data['Adj Close']
+                if isinstance(adj_close, pd.DataFrame):
+                    adj_close = adj_close.iloc[:, 0]  # Take the first column if multi-column
+                adj_close = pd.Series(adj_close.values.flatten(), index=adj_close.index, name=ticker)
                 ticker_data_list.append(adj_close)
                 valid_tickers.append(ticker)
             else:
@@ -108,10 +111,9 @@ def main():
         except Exception as e:
             print(f"Error downloading {ticker}: {e}")
     
-    # Combine all ticker data at once using pd.concat
+    # Combine all ticker data at once using pd.concat with keys
     if ticker_data_list:
-        data = pd.concat(ticker_data_list, axis=1)
-        data.columns = valid_tickers
+        data = pd.concat(ticker_data_list, axis=1, keys=valid_tickers)
     else:
         data = pd.DataFrame()
     
@@ -127,7 +129,7 @@ def main():
     
     # Instead of assigning columns in a loop, build a dict:
     skewness_dict = {}
-    for ticker in tickers:
+    for ticker in valid_tickers:  # Changed from 'tickers' to 'valid_tickers'
         if ticker in data.columns:
             skewness_series = compute_rolling_skewness(data[ticker], window=window)
             skewness_dict[ticker] = skewness_series
@@ -137,7 +139,7 @@ def main():
 
     # Combine all at once to avoid fragmentation
     if skewness_dict:
-        skewness_df = pd.DataFrame(skewness_dict)
+        skewness_df = pd.DataFrame(skewness_dict, index=data.index)
     else:
         skewness_df = pd.DataFrame(index=data.index)
     
@@ -202,65 +204,46 @@ def main():
         except Exception as e:
             print(f"Error fetching info for {ticker}: {e}")
 
-    # Filter data and skewness_dict to only include filtered_tickers
-    data = data[filtered_tickers]
-    skewness_dict = {k: v for k, v in skewness_dict.items() if k in filtered_tickers}
-
-    # Combine all at once to avoid fragmentation
-    if skewness_dict:
-        skewness_df = pd.DataFrame(skewness_dict)
-    else:
-        skewness_df = pd.DataFrame(index=data.index)
+    # Filter skewness_df to only include filtered_tickers (no need to recalculate)
+    skewness_df = skewness_df[[col for col in filtered_tickers if col in skewness_df.columns]]
     
-    # Continue only if we have valid data
-    if skewness_df.dropna(how='all').empty:
-        print("ERROR: No valid skewness values were calculated!")
+    # Recalculate weights on the filtered data
+    last_skew_filtered = skewness_df.loc[last_date]
+    if last_skew_filtered.dropna().empty:
+        print("ERROR: No valid skewness values after filtering!")
         return
     
-    # Get last available skewness values
-    last_date = skewness_df.dropna(how='all').tail(1).index[0]
-    last_skew = skewness_df.loc[last_date]
+    weights_filtered, ranks_filtered, demeaned_ranks_filtered = calculate_portfolio_weights(last_skew_filtered.dropna())
     
-    if last_skew.dropna().empty:
-        print("ERROR: No valid skewness values for the last date!")
-        return
+    # Create filtered result DataFrame
+    result_df_filtered = pd.DataFrame({
+        'skewness': last_skew_filtered[weights_filtered.index],
+        'rank': ranks_filtered,
+        'demeaned_rank': demeaned_ranks_filtered,
+        'weight': weights_filtered
+    }).sort_values('weight', ascending=False)
     
-    # Calculate portfolio weights based on negative skewness ranking
-    weights, ranks, demeaned_ranks = calculate_portfolio_weights(last_skew.dropna())
+    # Output filtered results to CSV
+    output_file_filtered = 'skewness_filtered.csv'
+    result_df_filtered.to_csv(output_file_filtered)
     
-    # Create a result DataFrame with skewness, ranks, and weights
-    result_df = pd.DataFrame({
-        'skewness': last_skew[weights.index],
-        'rank': ranks,
-        'demeaned_rank': demeaned_ranks,
-        'weight': weights
-    }).sort_values('weight', ascending=False)  # Sort by weight
-    
-    # Output to CSV files
-    output_file = 'skewness.csv'
-    result_df.to_csv(output_file)
-    
-    print(f"\n=== Portfolio Construction Results ===")
+    print(f"\n=== Filtered Portfolio Construction Results (ETFs + Medium/Large Cap) ===")
     print(f"Date: {last_date}")
-    print(f"\nOutput saved to: {output_file}")
-    print("\nSkewness Values, Ranks, and Portfolio Weights:")
-    print(result_df)
+    print(f"\nFiltered output saved to: {output_file_filtered}")
+    print("\nFiltered Skewness Values, Ranks, and Portfolio Weights:")
+    print(result_df_filtered)
     
-    # Show summary of weights
-    print("\nWeight Summary:")
-    print(f"Sum of absolute weights: {weights.abs().sum():.4f}")
-    print(f"Sum of positive weights: {weights[weights > 0].sum():.4f}")
-    print(f"Sum of negative weights: {weights[weights < 0].sum():.4f}")
+    # Show summary of filtered weights
+    print("\nFiltered Weight Summary:")
+    print(f"Sum of absolute weights: {weights_filtered.abs().sum():.4f}")
+    print(f"Sum of positive weights: {weights_filtered[weights_filtered > 0].sum():.4f}")
+    print(f"Sum of negative weights: {weights_filtered[weights_filtered < 0].sum():.4f}")
     
-    # Show most attractive stocks (most negative skewness, highest weight)
-    print("\nMost Attractive Stocks (highest positive weights):")
-    print(result_df.sort_values('weight', ascending=False))
-    
-    # Output top 10% by positive rank
-    top_10p = result_df[result_df['rank'] <= np.percentile(result_df['rank'], 10)]
-    top_10p_file = 'skewness_top10p.csv'
-    top_10p.to_csv(top_10p_file)
-    print(f"\nTop 10% by positive rank saved to: {top_10p_file}")
+    # Output top 10% by positive rank from filtered results
+    top_10p_filtered = result_df_filtered[result_df_filtered['rank'] <= np.percentile(result_df_filtered['rank'], 10)]
+    top_10p_filtered_file = 'skewness_top10p_filtered.csv'
+    top_10p_filtered.to_csv(top_10p_filtered_file)
+    print(f"\nTop 10% by positive rank (filtered) saved to: {top_10p_filtered_file}")
 
 if __name__ == "__main__":
     main()
