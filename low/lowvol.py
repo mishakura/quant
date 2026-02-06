@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from tickers import tickers
 
 # Define date range
-end_date = "2025-12-01"
+end_date = "2025-02-01"
 start_date = (datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=3*365)).strftime("%Y-%m-%d")
 
 # Download adjusted close prices for each ticker one by one
@@ -50,11 +50,8 @@ volatility = returns.std()
 # To annualize, add this line:
 volatility = volatility * (252 ** 0.5)  # Annualize using sqrt(252)
 
-# Select top 10 percentile of least volatile stocks
-threshold = volatility.quantile(0.1)
-low_vol_stocks = volatility[volatility <= threshold].sort_values()
+# Save all volatility values (annualized), sorted ascending
+volatility_sorted = volatility.sort_values()
+volatility_sorted.to_csv("volatility_all.csv", header=["StdDev"])
 
-# Output result to CSV
-low_vol_stocks.to_csv("low_volatility_stocks.csv", header=["StdDev"])
-
-print("Low volatility stocks saved to low_volatility_stocks.csv")
+print("All volatility values saved to volatility_all.csv")

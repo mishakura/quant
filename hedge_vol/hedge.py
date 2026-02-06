@@ -7,7 +7,7 @@ from datetime import datetime
 # Define tickers
 tickers = ['^VIX', '^VIX3M', 'SPY', 'VXX', 'SH']
 start_date = '2009-01-01'  # Changed: Start from VXX launch
-end_date = '2025-12-04'
+end_date = '2026-02-06'
 
 # Fetch data separately to avoid misalignment or missing data issues
 data_frames = []
