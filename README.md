@@ -1,65 +1,209 @@
-# Quant Trading Strategies
+# Quantitative Trading & Portfolio Management
 
-A collection of quantitative trading strategies, portfolio optimization tools, and backtesting frameworks for global and Argentine markets.
+A comprehensive collection of quantitative finance strategies, portfolio optimization algorithms, and performance measurement tools for both global and Argentine markets.
 
 ## Overview
 
-This repository contains various quantitative finance strategies and tools including:
+This repository contains:
 
-- **Portfolio Backtesting**: Multi-asset portfolio analysis with risk metrics (volatility, drawdown, CAGR)
-- **Factor Strategies**: Momentum, low volatility, ATR, skewness, and more
-- **Optimization**: Portfolio optimization algorithms (minimum correlation, NCO, hierarchical)
-- **Risk Management**: Dynamic hedging, volatility hedging strategies
-- **Monte Carlo Simulations**: Product simulations and scenario analysis
-- **Market Data**: Integration with BYMA (Argentine markets) and global ETFs via yfinance
+- **Factor-Based Strategies**: 9+ quantitative equity screening strategies
+- **Portfolio Optimization**: Advanced algorithms (HRP, NCO, minimum correlation, tail risk)
+- **Risk Management**: Dynamic hedging and volatility protection strategies
+- **Trend Following**: Complete systematic trading framework
+- **Performance Analytics**: Portfolio measurement, backtesting, and attribution
+- **Argentine Markets**: Integration with BYMA, CME futures, bonds, and local indices
+- **Monte Carlo Simulation**: Product and scenario modeling
 
-## Key Strategies
+## Factor Strategies
 
-| Strategy | Description | Location |
-|----------|-------------|----------|
-| **Momentum** | Momentum-based stock selection | `/momentum` |
-| **Low Volatility** | Low-vol anomaly strategy | `/low` |
-| **ATR** | Average True Range-based signals | `/atr` |
-| **Hedging** | Dynamic portfolio hedging | `/dynamic_hedge`, `/hedge_vol` |
-| **Portfolio Backtest** | Multi-asset portfolio analysis | `portfolio.py` |
+### Value & Quality
+| Strategy | Description | Key Metrics |
+|----------|-------------|-------------|
+| **QV** (Quantitative Value) | Comprehensive value screening combining franchise power and financial strength | F-Score, ROA, ROC, FCF/Assets, Margin Stability, EBIT/EV |
+| **NOA** | Net Operating Assets screening | Operating Assets - Operating Liabilities |
+| **CFON** | Cash flow analysis | Cash flow patterns and weights |
 
-## Markets Covered
+### Momentum & Earnings
+| Strategy | Description | Rebalance |
+|----------|-------------|-----------|
+| **Momentum** | Classic price momentum (12-month returns) | Quarterly |
+| **Sector Momentum** | SPDR sector ETF rotation | 11-month lookback |
+| **SUE** | Standardized Unexpected Earnings | Post-earnings |
+| **CAR3** | Cumulative Abnormal Returns (3-day earnings window) | Event-driven |
 
-- **Global**: US equities, bonds, commodities (via yfinance)
-- **Argentina**: BYMA stocks, CME futures, Argentine bonds and rates
+### Volatility & Risk
+| Strategy | Description | Focus |
+|----------|-------------|-------|
+| **Low Volatility** | Low-vol anomaly screening | Downside protection |
+| **Skewness** | Negative skewness portfolio construction | Tail risk mitigation |
+| **ATR** | Average True Range signals | Volatility-adjusted positioning |
+
+## Portfolio Optimization
+
+Advanced optimization algorithms using hierarchical clustering and modern portfolio theory:
+
+- **NCO** (Nested Clustered Optimization): Combines hierarchical clustering with optimization across 13 risk measures (MV, CVaR, CDaR, etc.)
+- **HRP** (Hierarchical Risk Parity): Dendrogram-based allocation
+- **Minimum Correlation**: Decorrelation-focused portfolio construction
+- **Tail Risk**: Tail-aware optimization with VaR/CVaR constraints
+
+Risk measures supported: Variance, MAD, CVaR, VaR, Maximum Drawdown, CDaR, EDaR, Ulcer Index, and more.
+
+## Risk Management & Hedging
+
+### Hedging Strategies
+- **Dynamic Hedge**: EMA-based tactical allocation (SPX/Gold/Cash)
+- **Hedge Vol**: VXX-based volatility hedging during drawdowns
+- **Fail Hedge**: Short SPY experiment (archived)
+
+## Trend Following System
+
+Complete systematic trading framework (`/trend`):
+
+1. **Data Pipeline**: Download and clean price data
+2. **Indicators**: Technical indicator computation
+3. **Signals**: Rule-based signal generation
+4. **Execution**: Trade simulation and position management
+5. **Analytics**: P&L tracking and performance statistics
+
+Run `update_all.py` to update data, indicators, and signals.
+
+## Performance Measurement
+
+**Portfolio Analytics** (`/pmeasurement`):
+- Multi-portfolio tracking and rebalancing
+- Risk-adjusted metrics (Sharpe, Sortino, Calmar, Information Ratio)
+- Drawdown analysis and visualization
+- Beta/Alpha attribution vs SPY
+- YTD, quarterly, and multi-period returns
+- Argentine portfolio performance (BYMA assets)
+
+## Argentine Market Integration
+
+### BYMA (Bolsas y Mercados Argentinos)
+- Excel add-in integration for market data
+- Local equity screening and analysis
+
+### CME Data & Instruments
+- **Bonares**: Argentine sovereign bonds
+- **ON**: Obligaciones Negociables (corporate bonds)
+- **Pesos**: Peso-denominated rates and FCIs
+- **Tasa Fija**: Fixed rate instruments
+- **Indices**: Custom Argentine market indices (CPI-adjusted, etc.)
+
+## Monte Carlo Simulation
+
+Product simulation framework (`/montecarlo`):
+- Scenario generation for structured products
+- Multi-asset path simulation
+- Statistical output analysis
+
+## Main Portfolio Backtest
+
+**`portfolio.py`**: Multi-asset portfolio backtest
+- **Assets**: VT (50%), BNDW (20%), ALT (30%)
+- **ALT Index**: Equal-weight synthetic from VNQ, REM, IGF, XTN, WOOD, DBC, PSP, QAI
+- **Metrics**: Volatility, CAGR, max drawdown, covariance
+- **Output**: Returns, cumulative performance, covariance matrix
 
 ## Quick Start
 
 ```bash
 # Install dependencies
-pip install pandas numpy yfinance openpyxl
+pip install pandas numpy yfinance openpyxl scipy riskfolio requests
 
 # Run portfolio backtest
 python portfolio.py
+
+# Run a factor strategy (e.g., momentum)
+cd momentum
+python momentum.py
+
+# Run portfolio optimization
+cd optimization
+python nco.py  # NCO optimization
+
+# Update trend following system
+cd trend
+python update_all.py
 ```
 
-## Structure
+## Project Structure
 
 ```
 quant/
-├── portfolio.py          # Main portfolio backtesting script
-├── momentum/             # Momentum strategy
-├── low/                  # Low volatility strategy
-├── optimization/         # Portfolio optimization algorithms
-├── montecarlo/          # Monte Carlo simulations
-├── byma/                # Argentine market data (BYMA)
-├── cme/                 # CME futures and rates
-└── output/              # Generated reports and results
+├── portfolio.py              # Main portfolio backtest
+│
+├── Factor Strategies/
+│   ├── momentum/             # Momentum screening
+│   ├── low/                  # Low volatility
+│   ├── qv/                   # Quantitative value (comprehensive)
+│   ├── skewness/             # Skewness-based allocation
+│   ├── sue/                  # Standardized Unexpected Earnings
+│   ├── car3/                 # 3-day earnings CAR
+│   ├── noa/                  # Net Operating Assets
+│   ├── atr/                  # Average True Range
+│   └── sectors/              # Sector momentum (SPDR ETFs)
+│
+├── Optimization/
+│   ├── optimization/nco.py   # Nested Clustered Optimization
+│   ├── optimization/h.py     # Hierarchical Risk Parity
+│   ├── optimization/mincorr.py  # Minimum correlation
+│   └── optimization/tail.py  # Tail risk optimization
+│
+├── Risk Management/
+│   ├── dynamic_hedge/        # Dynamic hedging (SPX/GC/Cash)
+│   ├── hedge_vol/            # VXX volatility hedge
+│   └── fail_hedge/           # Short SPY (archived)
+│
+├── Trend Following/
+│   └── trend/                # Complete systematic framework
+│       ├── data.py           # Data download
+│       ├── indicators.py     # Technical indicators
+│       ├── signals.py        # Signal generation
+│       ├── trades.py         # Trade simulation
+│       └── stats.py          # Performance stats
+│
+├── Performance/
+│   └── pmeasurement/         # Portfolio analytics
+│       ├── performance.py    # Metrics calculation
+│       ├── bd.py             # BYMA data processing
+│       └── rebalance_weights.py  # Rebalancing
+│
+├── Argentine Markets/
+│   ├── byma/                 # BYMA market data
+│   ├── cme/bonares/          # Argentine bonds
+│   ├── cme/on/               # Obligaciones Negociables
+│   ├── cme/pesos/            # Peso instruments
+│   └── cme/tasafija/         # Fixed rate instruments
+│
+├── Simulation/
+│   └── montecarlo/           # Monte Carlo simulations
+│
+├── Data/
+│   ├── data/                 # Historical price data (CSVs)
+│   └── output/               # Generated reports
+│
+└── cfon/                     # Cash flow analysis
 ```
 
-## Output
+## Output Files
 
-Results are saved to `/output` including:
-- Portfolio returns (CSV)
-- Cumulative performance (CSV)
-- Covariance matrices
-- Performance metrics (CAGR, volatility, max drawdown)
+Results are saved to various directories:
+- `/output`: Portfolio backtest results (returns, cumulative, covariance)
+- `*_output.csv`: Strategy-specific screening results
+- `/optimization`: Portfolio weights, dendrograms, statistics
+- `/trend`: Daily P&L, trade logs, performance stats
+- `/pmeasurement`: Drawdown charts, performance reports
+
+## Key Features
+
+- **Multi-Market**: Global equities, bonds, commodities, crypto, Argentine assets
+- **Institutional-Grade**: F-Score, NCO, HRP, tail risk optimization
+- **Production-Ready**: Rebalancing logic, performance tracking, risk monitoring
+- **Research-Focused**: Extensive factor library, backtesting framework
+- **Local Integration**: BYMA Excel add-in, CME Argentine data
 
 ---
 
-**Note**: This is a research and educational repository. Past performance does not guarantee future results.
+**Disclaimer**: This repository is for research and educational purposes only. Past performance does not guarantee future results. Strategies may involve significant risk and are not suitable for all investors.
