@@ -116,7 +116,7 @@ pip install pandas numpy yfinance openpyxl scipy riskfolio requests
 python portfolio.py
 
 # Run a factor strategy (e.g., momentum)
-cd momentum
+cd strategies/factor/momentum
 python momentum.py
 
 # Run portfolio optimization
@@ -124,7 +124,7 @@ cd optimization
 python nco.py  # NCO optimization
 
 # Update trend following system
-cd trend
+cd strategies/trend_following
 python update_all.py
 ```
 
@@ -133,68 +133,68 @@ python update_all.py
 ```
 quant/
 ├── portfolio.py              # Main portfolio backtest
+├── README.md
 │
-├── Factor Strategies/
-│   ├── momentum/             # Momentum screening
-│   ├── low/                  # Low volatility
-│   ├── qv/                   # Quantitative value (comprehensive)
-│   ├── skewness/             # Skewness-based allocation
-│   ├── sue/                  # Standardized Unexpected Earnings
-│   ├── car3/                 # 3-day earnings CAR
-│   ├── noa/                  # Net Operating Assets
-│   ├── atr/                  # Average True Range
-│   └── sectors/              # Sector momentum (SPDR ETFs)
+├── strategies/
+│   ├── factor/               # Factor-based strategies
+│   │   ├── momentum/         # Momentum screening
+│   │   ├── low_volatility/   # Low volatility anomaly
+│   │   ├── quantitative_value/  # Comprehensive value screening
+│   │   ├── skewness/         # Skewness-based allocation
+│   │   ├── sue/              # Standardized Unexpected Earnings
+│   │   ├── car3/             # 3-day earnings CAR
+│   │   ├── noa/              # Net Operating Assets
+│   │   ├── atr/              # Average True Range
+│   │   └── sector_momentum/  # SPDR sector ETF rotation
+│   │
+│   ├── trend_following/      # Complete systematic framework
+│   │   ├── data.py           # Data download
+│   │   ├── indicators.py     # Technical indicators
+│   │   ├── signals.py        # Signal generation
+│   │   ├── trades.py         # Trade simulation
+│   │   └── stats.py          # Performance stats
+│   │
+│   └── hedging/              # Risk management strategies
+│       ├── dynamic_hedge/    # Dynamic hedging (SPX/GC/Cash)
+│       ├── hedge_vol/        # VXX volatility hedge
+│       └── fail_hedge/       # Short SPY (archived)
 │
-├── Optimization/
-│   ├── optimization/nco.py   # Nested Clustered Optimization
-│   ├── optimization/h.py     # Hierarchical Risk Parity
-│   ├── optimization/mincorr.py  # Minimum correlation
-│   └── optimization/tail.py  # Tail risk optimization
+├── optimization/             # Portfolio optimization
+│   ├── nco.py                # Nested Clustered Optimization
+│   ├── h.py                  # Hierarchical Risk Parity
+│   ├── mincorr.py            # Minimum correlation
+│   └── tail.py               # Tail risk optimization
 │
-├── Risk Management/
-│   ├── dynamic_hedge/        # Dynamic hedging (SPX/GC/Cash)
-│   ├── hedge_vol/            # VXX volatility hedge
-│   └── fail_hedge/           # Short SPY (archived)
+├── performance/              # Portfolio analytics
+│   ├── performance.py        # Metrics calculation
+│   ├── bd.py                 # BYMA data processing
+│   ├── rebalance_weights.py  # Rebalancing
+│   └── ...                   # Other performance tools
 │
-├── Trend Following/
-│   └── trend/                # Complete systematic framework
-│       ├── data.py           # Data download
-│       ├── indicators.py     # Technical indicators
-│       ├── signals.py        # Signal generation
-│       ├── trades.py         # Trade simulation
-│       └── stats.py          # Performance stats
+├── simulation/               # Simulations
+│   └── montecarlo/           # Monte Carlo product simulations
 │
-├── Performance/
-│   └── pmeasurement/         # Portfolio analytics
-│       ├── performance.py    # Metrics calculation
-│       ├── bd.py             # BYMA data processing
-│       └── rebalance_weights.py  # Rebalancing
-│
-├── Argentine Markets/
-│   ├── byma/                 # BYMA market data
-│   ├── cme/bonares/          # Argentine bonds
-│   ├── cme/on/               # Obligaciones Negociables
-│   ├── cme/pesos/            # Peso instruments
-│   └── cme/tasafija/         # Fixed rate instruments
-│
-├── Simulation/
-│   └── montecarlo/           # Monte Carlo simulations
-│
-├── Data/
-│   ├── data/                 # Historical price data (CSVs)
-│   └── output/               # Generated reports
-│
-└── cfon/                     # Cash flow analysis
+└── data/
+    ├── market/               # Historical price data (CSVs)
+    ├── output/               # Generated reports
+    └── argentine/            # Argentine market data
+        ├── byma/             # BYMA market data
+        ├── cme/              # CME data
+        │   ├── bonares/      # Argentine bonds
+        │   ├── on/           # Obligaciones Negociables
+        │   ├── pesos/        # Peso instruments
+        │   └── tasafija/     # Fixed rate instruments
+        └── cfon/             # Cash flow analysis
 ```
 
 ## Output Files
 
 Results are saved to various directories:
-- `/output`: Portfolio backtest results (returns, cumulative, covariance)
-- `*_output.csv`: Strategy-specific screening results
-- `/optimization`: Portfolio weights, dendrograms, statistics
-- `/trend`: Daily P&L, trade logs, performance stats
-- `/pmeasurement`: Drawdown charts, performance reports
+- `data/output/`: Portfolio backtest results (returns, cumulative, covariance)
+- `strategies/factor/*/`: Strategy-specific screening results (*_output.csv)
+- `optimization/`: Portfolio weights, dendrograms, statistics
+- `strategies/trend_following/`: Daily P&L, trade logs, performance stats
+- `performance/`: Drawdown charts, performance reports
 
 ## Key Features
 
