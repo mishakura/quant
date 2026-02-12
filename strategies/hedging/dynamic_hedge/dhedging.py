@@ -15,8 +15,16 @@ Outputs:
 from pathlib import Path
 import pandas as pd
 import numpy as np
-import math
 import sys
+
+from quant.utils.dates import infer_periods_per_year
+from quant.analytics.performance import (
+    total_return,
+    cagr,
+    annualized_volatility,
+    max_drawdown,
+    sharpe_ratio,
+)
 
 # Configuration
 EMA_FAST = 126
@@ -45,50 +53,18 @@ def find_spx_file(start_dir: Path):
         cur = cur.parent
     raise FileNotFoundError(f"Could not find {DEFAULT_FILE} in {start_dir} or common locations.")
 
-def infer_periods_per_year(dates: pd.DatetimeIndex):
-    if len(dates) < 2:
-        return 252
-    diffs = dates.to_series().diff().dt.days.dropna()
-    median_days = diffs.median()
-    if median_days <= 2:
-        return 252
-    if median_days <= 9:
-        return 52
-    if median_days <= 40:
-        return 12
-    # quarterly or longer
-    if median_days <= 120:
-        return 4
-    # fallback
-    return 252
-
-def max_drawdown(cum_returns):
-    roll_max = cum_returns.cummax()
-    drawdown = cum_returns / roll_max - 1.0
-    return drawdown.min()
-
 def summarize(name, returns, periods_per_year):
     # returns are simple period returns (not cumulative)
     returns = returns.dropna()
     total_periods = len(returns)
     if total_periods == 0:
         return {}
-    cumulative = (1 + returns).prod() - 1
-    years = total_periods / periods_per_year
-    if years > 0:
-        cagr = (1 + cumulative) ** (1 / years) - 1
-    else:
-        cagr = float("nan")
-    ann_vol = returns.std() * math.sqrt(periods_per_year)
-    sharpe = (cagr / ann_vol) if ann_vol and not math.isnan(cagr) else float("nan")
-    cum_series = (1 + returns).cumprod()
-    mdd = max_drawdown(cum_series)
     return {
-        "Total Return": cumulative,
-        "CAGR": cagr,
-        "Annual Vol": ann_vol,
-        "Sharpe (rf=0)": sharpe,
-        "Max Drawdown": mdd
+        "Total Return": total_return(returns),
+        "CAGR": cagr(returns, periods_per_year),
+        "Annual Vol": annualized_volatility(returns, periods_per_year),
+        "Sharpe (rf=0)": sharpe_ratio(returns, risk_free_rate=0.0, periods_per_year=periods_per_year),
+        "Max Drawdown": max_drawdown(returns),
     }
 
 def main():

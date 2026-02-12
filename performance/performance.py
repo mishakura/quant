@@ -1,5 +1,21 @@
 import pandas as pd
+import numpy as np
 import os
+
+from quant.utils.constants import DEFAULT_RISK_FREE_RATE, TRADING_DAYS_PER_YEAR
+from quant.utils.dates import last_quarter_end
+from quant.analytics.performance import (
+    annualized_volatility,
+    max_drawdown,
+    sharpe_ratio,
+    sortino_ratio,
+    return_skewness,
+    return_kurtosis,
+    win_rate as compute_win_rate,
+    beta as compute_beta,
+    tracking_error as compute_tracking_error,
+    information_ratio as compute_information_ratio,
+)
 
 # File paths
 RETURNS_FILE = 'bd_data_merged.xlsx'
@@ -31,21 +47,10 @@ def main():
     returns = returns_full.copy()
 
     # --- Trim data to last available quarter-end ---
-    # Find the last date that is a quarter-end (March 31, June 30, Sept 30, Dec 31)
-    def is_quarter_end(date):
-        if isinstance(date, str):
-            date = pd.to_datetime(date)
-        return (date.month, date.day) in [(3,31), (6,30), (9,30), (12,31)]
-
-    # Ensure index is datetime
     returns.index = pd.to_datetime(returns.index)
-    # Find all quarter-end dates in the index
-    quarter_ends = [d for d in returns.index if is_quarter_end(d)]
-    if not quarter_ends:
-        raise ValueError("No quarter-end dates found in returns index.")
-    last_quarter_end = max(quarter_ends)
+    last_qe = last_quarter_end(returns.index)
     # Only use data up to and including last_quarter_end
-    returns = returns.loc[returns.index <= last_quarter_end]
+    returns = returns.loc[returns.index <= last_qe]
 
     # Calculate YTD return for each asset (using trimmed data)
     asset_ytd = {}
@@ -91,8 +96,8 @@ def main():
     spy_ytd = (1 + spy_returns.dropna()).prod() - 1 if not spy_returns.dropna().empty else float('nan')
     spy_n = spy_returns.dropna().shape[0]
 
-    risk_free_annual = 0.05
-    risk_free_daily = risk_free_annual / 252
+    risk_free_annual = DEFAULT_RISK_FREE_RATE
+    risk_free_daily = risk_free_annual / TRADING_DAYS_PER_YEAR
 
     for portfolio in list(portfolio_returns.columns) + ['SPY']:
         if portfolio == 'SPY':
@@ -127,13 +132,13 @@ def main():
         q2_return = (1 + q2).prod() - 1 if not q2.empty else float('nan')
         # Standard deviation (annualized)
         n = ret_clean.shape[0]
-        stdev = ret_clean.std() * (252 ** 0.5) if n > 1 else float('nan')
+        stdev = annualized_volatility(ret_clean) if n > 1 else float('nan')
         # Mean return (daily, not annualized)
         mean = ret_clean.mean() if n > 0 else float('nan')
         # YTD return (from first to last non-NaN value)
         ytd = (1 + ret_clean).prod() - 1 if n > 0 else float('nan')
         # Annualized YTD
-        ytd_ann = (1 + ytd) ** (252 / n) - 1 if n > 0 else float('nan')
+        ytd_ann = (1 + ytd) ** (TRADING_DAYS_PER_YEAR / n) - 1 if n > 0 else float('nan')
         # --- YTD (Full): Use all available data up to today ---
         ret_full_clean = ret_full.dropna()
         n_full = ret_full_clean.shape[0]
@@ -148,22 +153,17 @@ def main():
         else:
             last5_return = float('nan')
         # Max Drawdown
-        cumulative = (1 + ret_clean).cumprod()
-        running_max = cumulative.cummax()
-        drawdown = (cumulative - running_max) / running_max
-        max_drawdown = drawdown.min() if n > 0 else float('nan')
-        # Sharpe Ratio (risk-free = 5%)
-        excess = ret_clean - risk_free_daily
-        sharpe = (excess.mean() / ret_clean.std()) * (252 ** 0.5) if ret_clean.std() != 0 and n > 1 else float('nan')
-        # Sortino Ratio (risk-free = 5%)
-        downside = excess[excess < 0]
-        sortino = (excess.mean() / downside.std()) * (252 ** 0.5) if downside.std() != 0 and n > 1 else float('nan')
+        mdd = max_drawdown(ret_clean) if n > 0 else float('nan')
+        # Sharpe Ratio
+        sharpe = sharpe_ratio(ret_clean, risk_free_rate=risk_free_annual) if ret_clean.std() != 0 and n > 1 else float('nan')
+        # Sortino Ratio
+        sortino = sortino_ratio(ret_clean, risk_free_rate=risk_free_annual) if n > 1 else float('nan')
         # Skewness
-        skew = ret_clean.skew() if n > 2 else float('nan')
+        skew = return_skewness(ret_clean) if n > 2 else float('nan')
         # Kurtosis
-        kurt = ret_clean.kurtosis() if n > 3 else float('nan')
+        kurt = return_kurtosis(ret_clean) if n > 3 else float('nan')
         # Win Rate
-        win_rate = (ret_clean > 0).sum() / n if n > 0 else float('nan')
+        wr = compute_win_rate(ret_clean) if n > 0 else float('nan')
         # Best/Worst Day
         best_day = ret_clean.max() if n > 0 else float('nan')
         worst_day = ret_clean.min() if n > 0 else float('nan')
@@ -171,32 +171,26 @@ def main():
         vol_daily = ret_clean.std() if n > 1 else float('nan')
         # Tracking Error and Information Ratio (vs SPY, skip for SPY itself)
         if portfolio != 'SPY' and spy_returns.dropna().shape[0] > 1:
-            aligned = pd.concat([ret_clean, spy_returns], axis=1, join='inner').dropna()
-            diff = aligned.iloc[:,0] - aligned.iloc[:,1]
-            tracking_error = diff.std() * (252 ** 0.5) if diff.shape[0] > 1 else float('nan')
-            # Information Ratio: mean of excess return over risk-free minus SPY excess, divided by tracking error
-            spy_excess = aligned.iloc[:,1] - risk_free_daily
-            info_ratio = ((excess.loc[aligned.index] - spy_excess).mean() / tracking_error) if tracking_error != 0 and diff.shape[0] > 1 else float('nan')
+            te = compute_tracking_error(ret_clean, spy_returns)
+            ir = compute_information_ratio(ret_clean, spy_returns)
         else:
-            tracking_error = float('nan')
-            info_ratio = float('nan')
+            te = float('nan')
+            ir = float('nan')
         # Beta and alpha (CAPM)
         if portfolio == 'SPY':
-            beta = 1.0
+            b = 1.0
             alpha = 0.0
         elif spy_returns.dropna().empty or ret_clean.empty:
-            beta = float('nan')
+            b = float('nan')
             alpha = float('nan')
         else:
+            b = compute_beta(ret_clean, spy_returns)
+            # Alpha: regression intercept (daily, not annualized)
             aligned = pd.concat([ret_clean, spy_returns], axis=1, join='inner').dropna()
-            if aligned.shape[0] < 2:
-                beta = float('nan')
+            if aligned.shape[0] < 2 or np.isnan(b):
                 alpha = float('nan')
             else:
-                cov = aligned.iloc[:,0].cov(aligned.iloc[:,1])
-                var = aligned.iloc[:,1].var()
-                beta = cov / var if var != 0 else float('nan')
-                alpha = aligned.iloc[:,0].mean() - beta * aligned.iloc[:,1].mean()
+                alpha = aligned.iloc[:,0].mean() - b * aligned.iloc[:,1].mean()
         # YTD - SPY (not annualized)
         ytd_minus_spy = ytd - spy_ytd if n > 0 and spy_n > 0 else float('nan')
         stats.append({
@@ -206,21 +200,21 @@ def main():
             'Volatility (daily)': vol_daily,
             'YTD': ytd,
             'YTD (annualized)': ytd_ann,
-            'YTD (Full)': ytd_full,                  # <--- NEW
-            'Last 5 Days Return': last5_return,      # <--- NEW
+            'YTD (Full)': ytd_full,
+            'Last 5 Days Return': last5_return,
             'YTD - SPY': ytd_minus_spy,
             'Q2 2025 Return': q2_return,
-            'Max Drawdown': max_drawdown,
+            'Max Drawdown': mdd,
             'Sharpe Ratio': sharpe,
             'Sortino Ratio': sortino,
             'Skewness': skew,
             'Kurtosis': kurt,
-            'Win Rate': win_rate,
+            'Win Rate': wr,
             'Best Day': best_day,
             'Worst Day': worst_day,
-            'Tracking Error': tracking_error,
-            'Information Ratio': info_ratio,
-            'Beta (vs SPY)': beta,
+            'Tracking Error': te,
+            'Information Ratio': ir,
+            'Beta (vs SPY)': b,
             'Alpha (vs SPY)': alpha
         })
 

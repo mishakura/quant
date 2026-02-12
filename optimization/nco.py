@@ -3,27 +3,10 @@ import pandas as pd
 import yfinance as yf
 import warnings
 import riskfolio as hc
-import numpy as np
-import pandas as pd
-from scipy.stats import skew, kurtosis
 import os
 
-# List of all risk measures supported by Riskfolio for hierarchical models
-RISK_MEASURES = [
-    'MV',      # Variance
-    'MAD',     # Mean Absolute Deviation
-    'MSV',     # Semi Variance
-    'FLPM',    # First Lower Partial Moment
-    'SLPM',    # Second Lower Partial Moment
-    'CVaR',    # Conditional Value at Risk
-    'VaR',     # Value at Risk
-    'WR',      # Worst Realization
-    'MDD',     # Maximum Drawdown
-    'ADD',     # Average Drawdown
-    'CDaR',    # Conditional Drawdown at Risk
-    'EDaR',    # Entropic Drawdown at Risk
-    'UCI'      # Ulcer Index
-]
+from quant.utils.constants import DEFAULT_RISK_FREE_RATE, RISK_MEASURES, TRADING_DAYS_PER_YEAR
+from quant.analytics.performance import performance_summary
 
 warnings.filterwarnings("ignore")
 
@@ -85,7 +68,7 @@ Y = data_aligned.pct_change().dropna()
 # Output annualized standard deviation for all assets
 print("\nAnnualized standard deviation for all assets:")
 for asset in Y.columns:
-    ann_std = Y[asset].std() * np.sqrt(252)
+    ann_std = Y[asset].std() * np.sqrt(TRADING_DAYS_PER_YEAR)
     print(f"{asset}: {ann_std:.2%}")
 
 ax = hc.plot_dendrogram(returns=Y,
@@ -103,7 +86,7 @@ port = hc.HCPortfolio(returns=Y)
 # Try all risk measures and save results to Excel (one sheet per risk measure)
 model = 'NCO'
 correlation = 'pearson'
-rf = 0.03
+rf = DEFAULT_RISK_FREE_RATE
 linkage = 'ward'
 max_k = 10
 leaf_order = True
@@ -130,55 +113,29 @@ for rm in RISK_MEASURES:
         # Compute portfolio returns
         weights = w.values.flatten()
         port_rets = Y.dot(weights)
-        # Compute stats with numpy/pandas/scipy only
-        ann_return = (1 + port_rets).prod() ** (252 / len(port_rets)) - 1
-        ann_vol = port_rets.std() * (252 ** 0.5)
-        sharpe = (port_rets.mean() * 252 - rf) / (port_rets.std() * (252 ** 0.5))
-        downside = port_rets[port_rets < 0]
-        sortino = (port_rets.mean() * 252 - rf) / (downside.std() * (252 ** 0.5)) if len(downside) > 0 else float('nan')
-        running_max = (port_rets + 1).cumprod().cummax()
-        cumulative = (port_rets + 1).cumprod()
-        drawdown = cumulative / running_max - 1
-        max_dd = drawdown.min()
-        # Average drawdown
-        dd_periods = drawdown < 0
-        dd_groups = (dd_periods != dd_periods.shift()).cumsum()
-        dd_lengths = drawdown[dd_periods].groupby(dd_groups).size()
-        max_dd_duration = dd_lengths.max() if not dd_lengths.empty else 0
-        avg_dd = drawdown[dd_periods].groupby(dd_groups).mean().mean() if not dd_lengths.empty else 0
-        calmar = ann_return / abs(max_dd) if max_dd != 0 else float('nan')
-        omega = (port_rets[port_rets > rf/252].sum() / abs(port_rets[port_rets <= rf/252].sum())) if (port_rets[port_rets <= rf/252].sum() != 0) else float('nan')
-        skewness = skew(port_rets)
-        kurt = kurtosis(port_rets)
-        tail_ratio = (port_rets.quantile(0.95) / abs(port_rets.quantile(0.05))) if port_rets.quantile(0.05) != 0 else float('nan')
-        win_rate = (port_rets > 0).mean()
-        total_return = (1 + port_rets).prod() - 1
-        # Tail risk metrics
-        var_5 = port_rets.quantile(0.05)
-        cvar_5 = port_rets[port_rets <= var_5].mean()
-        downside_dev = port_rets[port_rets < 0].std() * (252 ** 0.5)
-        pct_below_2 = (port_rets < -0.02).mean()
+        # Compute stats using quant.analytics.performance
+        summary = performance_summary(port_rets, risk_free_rate=rf)
         stat = {
             'Risk Measure': rm,
-            'Annualized Return': ann_return,
-            'Annualized Volatility': ann_vol,
-            'Sharpe Ratio': sharpe,
-            'Sortino Ratio': sortino,
-            'Max Drawdown': max_dd,
-            'Max Drawdown (abs)': abs(max_dd),
-            'Average Drawdown': avg_dd,
-            'Max Drawdown Duration': max_dd_duration,
-            'Calmar Ratio': calmar,
-            'Omega Ratio': omega,
-            'Skew': skewness,
-            'Kurtosis': kurt,
-            'Tail Ratio': tail_ratio,
-            'VaR 5%': var_5,
-            'CVaR 5%': cvar_5,
-            'Downside Deviation': downside_dev,
-            '% Returns < -2%': pct_below_2,
-            'Win Rate': win_rate,
-            'Total Return': total_return
+            'Annualized Return': summary['Annualized Return'],
+            'Annualized Volatility': summary['Annualized Volatility'],
+            'Sharpe Ratio': summary['Sharpe Ratio'],
+            'Sortino Ratio': summary['Sortino Ratio'],
+            'Max Drawdown': summary['Max Drawdown'],
+            'Max Drawdown (abs)': abs(summary['Max Drawdown']),
+            'Average Drawdown': summary['Average Drawdown'],
+            'Max Drawdown Duration': summary['Max Drawdown Duration'],
+            'Calmar Ratio': summary['Calmar Ratio'],
+            'Omega Ratio': summary['Omega Ratio'],
+            'Skew': summary['Skewness'],
+            'Kurtosis': summary['Kurtosis'],
+            'Tail Ratio': summary['Tail Ratio'],
+            'VaR 5%': summary['VaR 95%'],
+            'CVaR 5%': summary['CVaR 95%'],
+            'Downside Deviation': summary['Downside Deviation'],
+            '% Returns < -2%': (port_rets < -0.02).mean(),
+            'Win Rate': summary['Win Rate'],
+            'Total Return': summary['Total Return']
         }
         stats.append(stat)
     except Exception as e:
@@ -196,6 +153,5 @@ print("\nAll nco weights and stats saved to nco_portfolio_weights_all_rm.xlsx")
 # Print the annualized mean return of each asset
 print("\nAnnualized mean return for each asset:")
 for asset in Y.columns:
-    mean_ret = Y[asset].mean() * 252
+    mean_ret = Y[asset].mean() * TRADING_DAYS_PER_YEAR
     print(f"{asset}: {mean_ret:.2%}")
-

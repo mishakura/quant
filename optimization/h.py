@@ -3,26 +3,11 @@ import pandas as pd
 import yfinance as yf
 import warnings
 import riskfolio as hc
-import numpy as np
-import pandas as pd
-from scipy.stats import skew, kurtosis
 import os
 import matplotlib.pyplot as plt
 
-# List of all risk measures supported by Riskfolio for hierarchical models
-RISK_MEASURES = [
-    'MSV',     # Semi Variance
-
-    'SLPM',    # Second Lower Partial Moment
-    'CVaR',    # Conditional Value at Risk
-    'VaR',     # Value at Risk
-    'WR',      # Worst Realization
-    'MDD',     # Maximum Drawdown
-    'ADD',     # Average Drawdown
-    'CDaR',    # Conditional Drawdown at Risk
-    'EDaR',    # Entropic Drawdown at Risk
-    'UCI'      # Ulcer Index
-]
+from quant.utils.constants import DEFAULT_RISK_FREE_RATE, RISK_MEASURES, TRADING_DAYS_PER_YEAR
+from quant.analytics.performance import performance_summary
 
 warnings.filterwarnings("ignore")
 
@@ -66,6 +51,8 @@ else:
 # Combinar todos los activos (tickers + hojas del Excel)
 all_assets = assets
 
+
+
 print("\nEarliest available date for each asset:")
 for asset in all_assets:
     first_date = data[asset].first_valid_index()
@@ -87,10 +74,69 @@ print(f"Total days: {len(data_aligned)}")
 
 
 # Set risk-free rate before any stats calculations
-rf = 0.03
+rf = DEFAULT_RISK_FREE_RATE
 
 # Calculando retornos para todos los activos
 Y = data_aligned.pct_change().dropna()
+
+
+def _compute_stats(port_rets, rm_label, spy_rets=None, risk_free_rate=DEFAULT_RISK_FREE_RATE):
+    """Compute stats dict for a return series using quant.analytics.performance.
+
+    Parameters
+    ----------
+    port_rets : pd.Series
+        Portfolio (or benchmark) simple daily returns.
+    rm_label : str
+        Label for the 'Risk Measure' key (e.g. risk measure code or 'SPY').
+    spy_rets : pd.Series or None
+        SPY benchmark returns for beta/alpha computation.
+    risk_free_rate : float
+        Annualized risk-free rate.
+
+    Returns
+    -------
+    dict
+        Stats dictionary matching the existing output format.
+    """
+    summary = performance_summary(
+        port_rets,
+        benchmark_returns=spy_rets,
+        risk_free_rate=risk_free_rate,
+    )
+    gmean_daily = (
+        (1 + port_rets).prod() ** (1 / len(port_rets)) - 1
+        if len(port_rets) > 0
+        else float('nan')
+    )
+    stat = {
+        'Risk Measure': rm_label,
+        'Annualized Return': summary['Annualized Return'],
+        'Geometric Mean (daily)': gmean_daily,
+        'Geometric Mean (annualized)': summary['Annualized Return'],
+        'Annualized Volatility': summary['Annualized Volatility'],
+        'Sharpe Ratio': summary['Sharpe Ratio'],
+        'Sortino Ratio': summary['Sortino Ratio'],
+        'Max Drawdown': summary['Max Drawdown'],
+        'Max Drawdown (abs)': abs(summary['Max Drawdown']),
+        'Average Drawdown': summary['Average Drawdown'],
+        'Max Drawdown Duration': summary['Max Drawdown Duration'],
+        'Calmar Ratio': summary['Calmar Ratio'],
+        'Omega Ratio': summary['Omega Ratio'],
+        'Skew': summary['Skewness'],
+        'Kurtosis': summary['Kurtosis'],
+        'Tail Ratio': summary['Tail Ratio'],
+        'VaR 5%': summary['VaR 95%'],
+        'CVaR 5%': summary['CVaR 95%'],
+        'Downside Deviation': summary['Downside Deviation'],
+        '% Returns < -2%': (port_rets < -0.02).mean(),
+        'Win Rate': summary['Win Rate'],
+        'Total Return': summary['Total Return'],
+        'Beta vs SPY': summary['Beta'],
+        "Jensen's Alpha": summary["Jensen's Alpha"],
+    }
+    return stat
+
 
 # --- SPY benchmark handling ---
 # Behavior:
@@ -145,72 +191,11 @@ if spy_rets is not None:
         spy_rets = spy_rets.squeeze()
     spy_rets = pd.Series(spy_rets).dropna()
 
-    spy_ann_return = (1 + spy_rets).prod() ** (252 / len(spy_rets)) - 1
-    # Geometric mean (daily and annualized). Daily geometric mean is useful to compare
-    # with the arithmetic mean; annualized geometric mean equals spy_ann_return above.
-    spy_gmean_daily = (1 + spy_rets).prod() ** (1 / len(spy_rets)) - 1 if len(spy_rets) > 0 else float('nan')
-    spy_gmean_ann = spy_ann_return
-    spy_ann_vol = spy_rets.std() * np.sqrt(252)
-    spy_sharpe = (spy_rets.mean() * 252 - rf) / (spy_rets.std() * np.sqrt(252))
-    spy_sortino = (spy_rets.mean() * 252 - rf) / (spy_rets[spy_rets < 0].std() * np.sqrt(252)) if len(spy_rets[spy_rets < 0]) > 0 else float('nan')
+    spy_stat = _compute_stats(spy_rets, 'SPY', spy_rets=None, risk_free_rate=rf)
+    # SPY vs itself: beta = 1, alpha = 0
+    spy_stat['Beta vs SPY'] = 1.0
+    spy_stat["Jensen's Alpha"] = 0.0
 
-    spy_running_max = (spy_rets + 1).cumprod().cummax()
-    spy_cumulative = (spy_rets + 1).cumprod()
-    # ensure drawdown is a Series
-    spy_drawdown = (spy_cumulative / spy_running_max - 1).squeeze()
-    spy_max_dd = spy_drawdown.min()
-
-    spy_dd_periods = spy_drawdown < 0
-    # identify contiguous drawdown groups, then mask to only negative periods when grouping
-    spy_dd_groups = (spy_dd_periods != spy_dd_periods.shift()).cumsum().astype(int)
-    if spy_dd_periods.any():
-        spy_dd_lengths = spy_drawdown[spy_dd_periods].groupby(spy_dd_groups[spy_dd_periods]).size()
-        spy_max_dd_duration = int(spy_dd_lengths.max()) if not spy_dd_lengths.empty else 0
-        spy_avg_dd = float(spy_drawdown[spy_dd_periods].groupby(spy_dd_groups[spy_dd_periods]).mean().mean()) if not spy_dd_lengths.empty else 0.0
-    else:
-        spy_dd_lengths = pd.Series(dtype=int)
-        spy_max_dd_duration = 0
-        spy_avg_dd = 0.0
-
-    spy_calmar = spy_ann_return / abs(spy_max_dd) if spy_max_dd != 0 else float('nan')
-    spy_omega = (spy_rets[spy_rets > rf/252].sum() / abs(spy_rets[spy_rets <= rf/252].sum())) if (spy_rets[spy_rets <= rf/252].sum() != 0) else float('nan')
-    spy_skewness = skew(spy_rets)
-    spy_kurt = kurtosis(spy_rets)
-    spy_tail_ratio = (spy_rets.quantile(0.95) / abs(spy_rets.quantile(0.05))) if spy_rets.quantile(0.05) != 0 else float('nan')
-    spy_win_rate = (spy_rets > 0).mean()
-    spy_total_return = (1 + spy_rets).prod() - 1
-    spy_var_5 = spy_rets.quantile(0.05)
-    spy_cvar_5 = spy_rets[spy_rets <= spy_var_5].mean()
-    spy_downside_dev = spy_rets[spy_rets < 0].std() * (252 ** 0.5)
-    spy_pct_below_2 = (spy_rets < -0.02).mean()
-    spy_beta = 1.0
-    spy_jensen_alpha = 0.0
-    spy_stat = {
-        'Risk Measure': 'SPY',
-        'Annualized Return': spy_ann_return,
-        'Geometric Mean (daily)': spy_gmean_daily,
-        'Geometric Mean (annualized)': spy_gmean_ann,
-        'Annualized Volatility': spy_ann_vol,
-        'Sharpe Ratio': spy_sharpe,
-        'Sortino Ratio': spy_sortino,
-        'Max Drawdown': spy_max_dd,
-        'Max Drawdown (abs)': abs(spy_max_dd),
-        'Average Drawdown': spy_avg_dd,
-        'Max Drawdown Duration': spy_max_dd_duration,
-        'Calmar Ratio': spy_calmar,
-        'Omega Ratio': spy_omega,
-        'Skew': spy_skewness,
-        'Kurtosis': spy_kurt,
-        'Tail Ratio': spy_tail_ratio,
-        'VaR 5%': spy_var_5,
-        'CVaR 5%': spy_cvar_5,
-        'Downside Deviation': spy_downside_dev,
-        '% Returns < -2%': spy_pct_below_2,
-        'Win Rate': spy_win_rate,
-        'Total Return': spy_total_return,
-        'Beta vs SPY': spy_beta,
-        "Jensen's Alpha": spy_jensen_alpha
-    }
     print("\nSPY benchmark stats:")
     for k, v in spy_stat.items():
         if k != 'Risk Measure':
@@ -221,7 +206,7 @@ else:
 # Output annualized standard deviation for all assets
 print("\nAnnualized standard deviation for all assets:")
 for asset in Y.columns:
-    ann_std = Y[asset].std() * np.sqrt(252)
+    ann_std = Y[asset].std() * np.sqrt(TRADING_DAYS_PER_YEAR)
     print(f"{asset}: {ann_std:.2%}")
 
 # Plot dendrogram using Riskfolio and save the figure
@@ -358,74 +343,7 @@ for rm, w in results.items():
 
         port_rets = Y.dot(weight_vals)
 
-        ann_return = (1 + port_rets).prod() ** (252 / len(port_rets)) - 1
-        # Geometric mean (daily and annualized) for the portfolio returns
-        gmean_daily = (1 + port_rets).prod() ** (1 / len(port_rets)) - 1 if len(port_rets) > 0 else float('nan')
-        gmean_annualized = ann_return
-        ann_vol = port_rets.std() * (252 ** 0.5)
-        sharpe = (port_rets.mean() * 252 - rf) / (port_rets.std() * (252 ** 0.5))
-        downside = port_rets[port_rets < 0]
-        sortino = (port_rets.mean() * 252 - rf) / (downside.std() * (252 ** 0.5)) if len(downside) > 0 else float('nan')
-        running_max = (port_rets + 1).cumprod().cummax()
-        cumulative = (port_rets + 1).cumprod()
-        drawdown = cumulative / running_max - 1
-        max_dd = drawdown.min()
-        dd_periods = drawdown < 0
-        dd_groups = (dd_periods != dd_periods.shift()).cumsum()
-        dd_lengths = drawdown[dd_periods].groupby(dd_groups).size()
-        max_dd_duration = dd_lengths.max() if not dd_lengths.empty else 0
-        avg_dd = drawdown[dd_periods].groupby(dd_groups).mean().mean() if not dd_lengths.empty else 0
-        calmar = ann_return / abs(max_dd) if max_dd != 0 else float('nan')
-        omega = (port_rets[port_rets > rf/252].sum() / abs(port_rets[port_rets <= rf/252].sum())) if (port_rets[port_rets <= rf/252].sum() != 0) else float('nan')
-        skewness = skew(port_rets)
-        kurt = kurtosis(port_rets)
-        tail_ratio = (port_rets.quantile(0.95) / abs(port_rets.quantile(0.05))) if port_rets.quantile(0.05) != 0 else float('nan')
-        win_rate = (port_rets > 0).mean()
-        total_return = (1 + port_rets).prod() - 1
-        var_5 = port_rets.quantile(0.05)
-        cvar_5 = port_rets[port_rets <= var_5].mean()
-        downside_dev = port_rets[port_rets < 0].std() * (250 ** 0.5) if len(port_rets) > 0 else float('nan')
-        pct_below_2 = (port_rets < -0.02).mean()
-
-        # Beta and Jensen's Alpha vs SPY if available
-        if spy_rets is not None:
-            aligned = pd.concat([port_rets, spy_rets], axis=1, join='inner').dropna()
-            port_aligned = aligned.iloc[:, 0]
-            spy_aligned = aligned.iloc[:, 1]
-            beta = np.cov(port_aligned, spy_aligned)[0, 1] / np.var(spy_aligned)
-            port_ann_excess = port_aligned.mean() * 252 - rf
-            spy_ann_excess = spy_aligned.mean() * 252 - rf
-            jensen_alpha = port_ann_excess - beta * spy_ann_excess
-        else:
-            beta = float('nan')
-            jensen_alpha = float('nan')
-
-        stat = {
-            'Risk Measure': rm,
-            'Annualized Return': ann_return,
-            'Geometric Mean (daily)': gmean_daily,
-            'Geometric Mean (annualized)': gmean_annualized,
-            'Annualized Volatility': ann_vol,
-            'Sharpe Ratio': sharpe,
-            'Sortino Ratio': sortino,
-            'Max Drawdown': max_dd,
-            'Max Drawdown (abs)': abs(max_dd),
-            'Average Drawdown': avg_dd,
-            'Max Drawdown Duration': max_dd_duration,
-            'Calmar Ratio': calmar,
-            'Omega Ratio': omega,
-            'Skew': skewness,
-            'Kurtosis': kurt,
-            'Tail Ratio': tail_ratio,
-            'VaR 5%': var_5,
-            'CVaR 5%': cvar_5,
-            'Downside Deviation': downside_dev,
-            '% Returns < -2%': pct_below_2,
-            'Win Rate': win_rate,
-            'Total Return': total_return,
-            'Beta vs SPY': beta,
-            "Jensen's Alpha": jensen_alpha
-        }
+        stat = _compute_stats(port_rets, rm, spy_rets=spy_rets, risk_free_rate=rf)
         stats.append(stat)
     except Exception as e:
         print(f"\nStats for {rm} failed: {e}")
@@ -461,71 +379,11 @@ if spy_rets is not None:
         spy_rets = spy_rets.squeeze()
     spy_rets = pd.Series(spy_rets).dropna()
 
-    spy_ann_return = (1 + spy_rets).prod() ** (252 / len(spy_rets)) - 1
-    spy_gmean_daily = (1 + spy_rets).prod() ** (1 / len(spy_rets)) - 1 if len(spy_rets) > 0 else float('nan')
-    spy_gmean_ann = spy_ann_return
-    spy_ann_vol = spy_rets.std() * np.sqrt(252)
-    spy_sharpe = (spy_rets.mean() * 252 - rf) / (spy_rets.std() * np.sqrt(252))
-    spy_sortino = (spy_rets.mean() * 252 - rf) / (spy_rets[spy_rets < 0].std() * np.sqrt(252)) if len(spy_rets[spy_rets < 0]) > 0 else float('nan')
+    spy_stat = _compute_stats(spy_rets, 'SPY', spy_rets=None, risk_free_rate=rf)
+    # SPY vs itself: beta = 1, alpha = 0
+    spy_stat['Beta vs SPY'] = 1.0
+    spy_stat["Jensen's Alpha"] = 0.0
 
-    spy_running_max = (spy_rets + 1).cumprod().cummax()
-    spy_cumulative = (spy_rets + 1).cumprod()
-    # ensure drawdown is 1-D Series
-    spy_drawdown = (spy_cumulative / spy_running_max - 1).squeeze()
-    spy_max_dd = spy_drawdown.min()
-
-    spy_dd_periods = spy_drawdown < 0
-    spy_dd_groups = (spy_dd_periods != spy_dd_periods.shift()).cumsum().astype(int)
-    # group only the negative-period indices (use the masked groups)
-    if spy_dd_periods.any():
-        spy_dd_lengths = spy_drawdown[spy_dd_periods].groupby(spy_dd_groups[spy_dd_periods]).size()
-        spy_max_dd_duration = int(spy_dd_lengths.max()) if not spy_dd_lengths.empty else 0
-        spy_avg_dd = float(spy_drawdown[spy_dd_periods].groupby(spy_dd_groups[spy_dd_periods]).mean().mean()) if not spy_dd_lengths.empty else 0.0
-    else:
-        spy_dd_lengths = pd.Series(dtype=int)
-        spy_max_dd_duration = 0
-        spy_avg_dd = 0.0
-
-    spy_calmar = spy_ann_return / abs(spy_max_dd) if spy_max_dd != 0 else float('nan')
-    spy_omega = (spy_rets[spy_rets > rf/252].sum() / abs(spy_rets[spy_rets <= rf/252].sum())) if (spy_rets[spy_rets <= rf/252].sum() != 0) else float('nan')
-    spy_skewness = skew(spy_rets)
-    spy_kurt = kurtosis(spy_rets)
-    spy_tail_ratio = (spy_rets.quantile(0.95) / abs(spy_rets.quantile(0.05))) if spy_rets.quantile(0.05) != 0 else float('nan')
-    spy_win_rate = (spy_rets > 0).mean()
-    spy_total_return = (1 + spy_rets).prod() - 1
-    spy_var_5 = spy_rets.quantile(0.05)
-    spy_cvar_5 = spy_rets[spy_rets <= spy_var_5].mean()
-    spy_downside_dev = spy_rets[spy_rets < 0].std() * (252 ** 0.5)
-    spy_pct_below_2 = (spy_rets < -0.02).mean()
-    # Beta and Jensen's alpha of SPY vs itself (trivial)
-    spy_beta = 1.0
-    spy_jensen_alpha = 0.0
-    spy_stat = {
-        'Risk Measure': 'SPY',
-        'Annualized Return': spy_ann_return,
-        'Geometric Mean (daily)': spy_gmean_daily,
-        'Geometric Mean (annualized)': spy_gmean_ann,
-        'Annualized Volatility': spy_ann_vol,
-        'Sharpe Ratio': spy_sharpe,
-        'Sortino Ratio': spy_sortino,
-        'Max Drawdown': spy_max_dd,
-        'Max Drawdown (abs)': abs(spy_max_dd),
-        'Average Drawdown': spy_avg_dd,
-        'Max Drawdown Duration': spy_max_dd_duration,
-        'Calmar Ratio': spy_calmar,
-        'Omega Ratio': spy_omega,
-        'Skew': spy_skewness,
-        'Kurtosis': spy_kurt,
-        'Tail Ratio': spy_tail_ratio,
-        'VaR 5%': spy_var_5,
-        'CVaR 5%': spy_cvar_5,
-        'Downside Deviation': spy_downside_dev,
-        '% Returns < -2%': spy_pct_below_2,
-        'Win Rate': spy_win_rate,
-        'Total Return': spy_total_return,
-        'Beta vs SPY': spy_beta,
-        "Jensen's Alpha": spy_jensen_alpha
-    }
     print("\nSPY benchmark stats:")
     for k, v in spy_stat.items():
         if k != 'Risk Measure':
@@ -564,6 +422,5 @@ print("\nAll HRP + HERC weights and stats saved to hrp_portfolio_weights_all_rm.
 # Print the annualized mean return of each asset
 print("\nAnnualized mean return for each asset:")
 for asset in Y.columns:
-    mean_ret = Y[asset].mean() * 252
+    mean_ret = Y[asset].mean() * TRADING_DAYS_PER_YEAR
     print(f"{asset}: {mean_ret:.2%}")
-

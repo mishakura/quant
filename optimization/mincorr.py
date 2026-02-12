@@ -4,7 +4,10 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 import riskfolio as rp
-from scipy.optimize import minimize
+
+from quant.utils.constants import TRADING_DAYS_PER_YEAR
+from quant.analytics.performance import annualized_return, annualized_volatility, sharpe_ratio
+from quant.data.loaders import load_returns_from_prices
 
 TICKERS = [
 	"ARKK","SPXL","XLE","GLD","XLF","FXI","QQQ","IBIT","IWDA","IEMG",
@@ -25,15 +28,6 @@ def download_prices(tickers, start="2010-01-01", end=None, auto_adjust=True):
 	# Sort columns to a stable order
 	data = data.reindex(columns=sorted(data.columns))
 	return data
-
-def returns_from_prices(prices, period="daily"):
-	if period == "daily":
-		rets = prices.pct_change().dropna()
-	elif period == "log":
-		rets = np.log(prices).diff().dropna()
-	else:
-		rets = prices.pct_change().dropna()
-	return rets
 
 def min_correlation_weights(returns, model='HRP', rm=None, codependence='pearson', linkage='ward', max_k=10, leaf_order=True, rf=0.0):
 	"""Compute portfolio weights using Riskfolio's hierarchical methods (HRP or HERC).
@@ -88,10 +82,11 @@ def min_correlation_weights(returns, model='HRP', rm=None, codependence='pearson
 
 def summary_stats(returns, weights, rf=0.0):
 	port_rets = returns.dot(weights)
-	ann_ret = (1 + port_rets).prod() ** (252 / len(port_rets)) - 1
-	ann_vol = port_rets.std() * np.sqrt(252)
-	sharpe = (port_rets.mean() * 252 - rf) / ann_vol if ann_vol != 0 else np.nan
-	return {'Annualized Return': ann_ret, 'Annualized Volatility': ann_vol, 'Sharpe': sharpe}
+	return {
+		'Annualized Return': annualized_return(port_rets),
+		'Annualized Volatility': annualized_volatility(port_rets),
+		'Sharpe': sharpe_ratio(port_rets, risk_free_rate=rf),
+	}
 
 def main():
 	here = os.path.dirname(__file__)
@@ -100,7 +95,7 @@ def main():
 	prices = prices.dropna(axis=1, how='all')
 	print(f"Downloaded prices shape: {prices.shape}")
 
-	rets = returns_from_prices(prices, period='daily')
+	rets = load_returns_from_prices(prices, method='arithmetic').dropna()
 	rets = rets.dropna(axis=1, how='all')
 	print(f"Computed returns shape: {rets.shape}")
 
