@@ -552,18 +552,156 @@ Replaced ~200 lines of copy-pasted metric calculations with imports from `quant.
 
 ### Phase 3+ — Remaining work (not started)
 
-| # | Phase | Scope | Notes |
-|---|---|---|---|
-| 6 | **Refactor factors** | Extract momentum, value, skewness, quality, earnings factors into `Factor` ABC classes under `src/quant/factors/` | Existing code in `strategies/factor/` — needs class hierarchy |
-| 7 | **Refactor optimizers** | Unify `optimization/nco.py`, `h.py`, `mincorr.py` under `src/quant/portfolio/` with common `Optimizer` interface | Extract Riskfolio wrappers from scripts into reusable classes |
-| 8 | **Build backtesting engine** | Consolidate `simulation.py`, `trades.py`, `signals.py` into `src/quant/backtesting/` | Event-driven or vectorized backtest loop |
-| 9 | **Migrate strategies** | Wrap trend-following (`dhedging.py`) and hedging into `Strategy` ABC implementations | Keep EMA logic, add proper interface |
-| 10 | **Migrate fixed income** | Structure Argentine bonds, corporates, rates under `src/quant/fixed_income/` | `data/argentine/` has raw data; needs pricing models |
-| 11 | **Migrate Monte Carlo** | Clean up `simulation/montecarlo/` with proper distribution fitting | GBM, fat-tailed, correlated path generation |
-| 12 | **Expand tests** | Add tests for factors, optimizers, backtesting, strategies | Target >80% coverage on `src/quant/` |
-| 13 | **Add configs** | Extract hardcoded asset lists, date ranges, rf rates into YAML | `configs/universes/`, `configs/strategies/`, `configs/portfolios/` |
-| 14 | **Add scripts** | CLI entry points: `run_backtest.py`, `update_data.py`, `run_optimization.py` | Use `argparse` + YAML config loading |
-| 15 | **Convert data to Parquet** | Migrate CSV/Excel data files to Parquet where appropriate | Faster I/O, smaller files, preserves dtypes |
+Follow these steps in order. Each phase should be done on the `refactor/professional-structure` branch.
+Always run `python -m pytest tests/ -v` after each phase to confirm nothing breaks.
+
+#### Step 6: Refactor factors → `src/quant/factors/`
+
+**Source files:** `strategies/factor/momentum/momentum.py`, `strategies/factor/skew/skew.py`, `strategies/factor/value/value.py`, and any other factor scripts under `strategies/factor/`.
+
+**What to do:**
+1. Read all existing factor scripts to understand their computation logic.
+2. Create `src/quant/factors/base.py` with an abstract `Factor` ABC:
+   - `__init__(self, name, lookback, universe)` constructor
+   - `compute(self, data: pd.DataFrame) -> pd.Series` abstract method (returns factor scores per asset)
+   - `validate_data(self, data: pd.DataFrame) -> bool` abstract method
+3. Create one module per factor under `src/quant/factors/`:
+   - `momentum.py` — cross-sectional & time-series momentum (lookback, skip recent month, etc.)
+   - `value.py` — F-Score, EBIT/EV, FCF/Assets (if fundamental data available)
+   - `skewness.py` — return skewness factor
+   - `quality.py`, `earnings.py`, `sector_rotation.py` — as code exists for them
+4. Create `src/quant/factors/registry.py` — dict-based registry so factors can be referenced by name from YAML configs.
+5. Update the original scripts under `strategies/factor/` to import from `quant.factors.*` (same pattern as Phase 2).
+6. Add tests in `tests/test_factors/`.
+
+#### Step 7: Refactor optimizers → `src/quant/portfolio/`
+
+**Source files:** `optimization/nco.py`, `optimization/h.py`, `optimization/mincorr.py`, `optimization/tail.py` (if it exists).
+
+**What to do:**
+1. Read all optimization scripts to catalog the Riskfolio wrapper patterns.
+2. Create `src/quant/portfolio/optimizer.py` with an abstract `Optimizer` ABC:
+   - `optimize(self, returns: pd.DataFrame, **kwargs) -> pd.Series` (returns weights)
+   - Common config: `risk_free_rate`, `risk_measure`, `codependence`, `linkage`
+3. Create concrete implementations:
+   - `hierarchical.py` — `HRPOptimizer`, `HERCOptimizer` wrapping Riskfolio `HCPortfolio`
+   - `nco.py` — `NCOOptimizer` wrapping Riskfolio NCO model
+   - `min_correlation.py` — Min-correlation approach
+   - `mean_variance.py` — Classical MVO with shrinkage (if code exists)
+   - `risk_budgeting.py` — Risk parity (if code exists)
+4. Each optimizer should accept a `risk_measure` parameter from `RISK_MEASURES` and iterate internally (replacing the current for-loop-per-RM pattern in the scripts).
+5. Create `src/quant/portfolio/constraints.py` for weight constraints, turnover limits.
+6. Update the original `optimization/*.py` scripts to instantiate optimizers from `quant.portfolio.*`.
+7. Add tests in `tests/test_portfolio/`.
+
+#### Step 8: Build backtesting engine → `src/quant/backtesting/`
+
+**Source files:** `strategies/trend_following/simulation.py`, `strategies/trend_following/trades.py`, `strategies/trend_following/signals.py`, `strategies/trend_following/stats.py`.
+
+**What to do:**
+1. Read the existing simulation/trade logic to understand the event flow.
+2. Create `src/quant/backtesting/engine.py`:
+   - Vectorized backtest loop: takes signals + prices → returns portfolio returns series
+   - Respects rebalance calendar (use `quant.utils.dates.get_rebalance_dates()`)
+   - No look-ahead bias: signals at `t` use data up to `t-1`
+3. Create `src/quant/backtesting/portfolio_state.py` — track positions, cash, NAV over time.
+4. Create `src/quant/backtesting/execution.py` — slippage, commissions, market impact models. Default: 10bps round-trip (`DEFAULT_ROUND_TRIP_COST_BPS`).
+5. Create `src/quant/backtesting/results.py` — `BacktestResult` container that calls `performance_summary()` on the output returns.
+6. Add tests in `tests/test_backtesting/`.
+
+#### Step 9: Migrate strategies → `src/quant/strategies/`
+
+**Source files:** `strategies/hedging/dynamic_hedge/dhedging.py`, `strategies/trend_following/` (multiple files), `strategies/hedging/fail_hedge/`.
+
+**What to do:**
+1. Create `src/quant/strategies/base.py` with abstract `Strategy` ABC:
+   - `generate_signals(self, data: pd.DataFrame) -> pd.DataFrame` (returns position signals)
+   - `run(self, data: pd.DataFrame) -> BacktestResult` (signals + backtest in one call)
+2. Create concrete strategies:
+   - `trend_following.py` — EMA crossover from `dhedging.py`, parameterized by fast/slow spans
+   - `factor_strategy.py` — Long/short factor portfolio (uses `Factor` ABC from step 6)
+   - `hedging_overlay.py` — Dynamic hedging strategies
+3. Create `src/quant/strategies/registry.py` — so configs can reference strategies by name.
+4. Update original scripts to use the new strategy classes.
+5. Add tests in `tests/test_strategies/` (at minimum, test signal generation doesn't look ahead).
+
+#### Step 10: Migrate fixed income → `src/quant/fixed_income/`
+
+**Source files:** `data/argentine/` directory (BYMA data, Excel files), any bond pricing scripts.
+
+**What to do:**
+1. Catalog all Argentine fixed-income data and existing analysis scripts.
+2. Create `src/quant/fixed_income/bonds.py` — bond pricing, duration, convexity, spread calculations.
+3. Create `src/quant/fixed_income/cashflows.py` — cashflow construction and NPV.
+4. Create `src/quant/fixed_income/curves.py` — yield curve construction and interpolation.
+5. Create `src/quant/fixed_income/inflation.py` — CPI-linked instrument modeling (Lecer, CER bonds).
+6. Create instrument definitions under `src/quant/fixed_income/instruments/`:
+   - `bonares.py` — Sovereign bonds (Bonares, Globales)
+   - `on.py` — Obligaciones Negociables (corporates)
+   - `letras.py` — Short-term bills (Lecap, Lecer, Lede)
+   - `tasa_fija.py` — Fixed rate instruments
+7. Create `src/quant/data/providers/byma.py` — BYMA data adapter.
+8. Add tests in `tests/test_fixed_income/`.
+
+#### Step 11: Migrate Monte Carlo → `src/quant/simulation/`
+
+**Source files:** `simulation/montecarlo/` directory.
+
+**What to do:**
+1. Read existing Monte Carlo code.
+2. Create `src/quant/simulation/montecarlo.py` — path generation:
+   - Geometric Brownian Motion (GBM)
+   - Fat-tailed distributions (Student-t, stable)
+   - Correlated multi-asset simulation (Cholesky decomposition)
+3. Create `src/quant/simulation/distributions.py` — distribution fitting and parameter estimation.
+4. Create `src/quant/simulation/scenarios.py` — scenario definition and management.
+5. Create `src/quant/simulation/cashflow.py` — cashflow modeling with inflation adjustment.
+6. Add tests in `tests/test_simulation/`.
+
+#### Step 12: Expand test coverage
+
+**What to do:**
+1. Add tests for every new module created in steps 6-11.
+2. Property-based tests for mathematical invariants:
+   - Portfolio weights sum to 1.0
+   - Sharpe ratio is scale-invariant
+   - Drawdown series is always ≤ 0
+3. Regression tests with known-good outputs for at least one optimizer and one strategy.
+4. Integration tests (marked `@pytest.mark.slow`) for full pipeline runs.
+5. Target: **>80% code coverage** on `src/quant/`.
+6. Run: `pytest --cov=quant --cov-report=html`
+
+#### Step 13: Add YAML configs → `configs/`
+
+**What to do:**
+1. Create `configs/universes/` — asset universe definitions:
+   - `sp500.yaml`, `etfs.yaml`, `argentina.yaml` (extract from hardcoded lists in optimization scripts)
+2. Create `configs/strategies/` — strategy parameter configs:
+   - `momentum.yaml`, `trend_following.yaml`, `hedging.yaml`
+3. Create `configs/portfolios/` — portfolio construction configs:
+   - `hrp.yaml`, `herc.yaml`, `nco.yaml` (risk measures, linkage, rf, max_k, etc.)
+4. Create `configs/simulations/` — Monte Carlo configs.
+5. Add a `load_config()` helper to `quant/config.py` that reads YAML and validates keys.
+6. Update scripts to accept `--config path/to/config.yaml` instead of hardcoded parameters.
+
+#### Step 14: Add CLI scripts → `scripts/`
+
+**What to do:**
+1. Create `scripts/run_backtest.py` — run a strategy backtest from a YAML config file.
+2. Create `scripts/update_data.py` — download/refresh market data for a universe.
+3. Create `scripts/run_optimization.py` — run portfolio optimization from config.
+4. Create `scripts/run_simulation.py` — run Monte Carlo simulations from config.
+5. Create `scripts/generate_report.py` — generate HTML/Excel performance reports.
+6. Each script: `argparse` CLI, loads YAML config, configures logging, runs pipeline, saves to `output/`.
+
+#### Step 15: Convert data to Parquet
+
+**What to do:**
+1. Identify all CSV/Excel data files that are used for numerical time-series data.
+2. Convert `data/raw/` and `data/processed/` files to Parquet format.
+3. Update `quant.data.loaders` to prefer Parquet when available (fallback to CSV).
+4. Keep `data/samples/` as small CSVs for test fixtures (tracked in git).
+5. Ensure `.gitignore` excludes `*.parquet` in `data/raw/` and `data/processed/`.
 
 ---
 
