@@ -510,25 +510,60 @@ Development dependencies:
 
 ---
 
-## Refactoring Priorities
+## Refactoring Progress
 
-When refactoring the existing codebase to match this blueprint, follow this order:
+### Phase 1 — Package scaffolding, utilities, data layer, analytics ✅
 
-1. **Set up project scaffolding**: `pyproject.toml`, `src/quant/` package structure, `tests/`.
-2. **Extract shared utilities**: constants, date helpers, I/O functions, validation.
-3. **Build the data layer**: providers, loaders, cleaners, universe definitions.
-4. **Migrate risk measures**: consolidate duplicated Sharpe/Sortino/MDD calculations into `risk/measures.py`.
-5. **Migrate analytics**: unify `performance.py`, `stats.py` into `analytics/`.
-6. **Refactor factors**: extract each factor into its own class with the `Factor` ABC.
-7. **Refactor optimizers**: unify `nco.py`, `h.py`, `mincorr.py`, `tail.py` under `portfolio/`.
-8. **Build backtesting engine**: consolidate `simulation.py`, `trades.py`, `signals.py`.
-9. **Migrate strategies**: wrap trend-following and hedging into `Strategy` implementations.
-10. **Migrate fixed income**: structure Argentine bond/corporate/rate modules.
-11. **Migrate Monte Carlo**: clean up simulation with proper distribution handling.
-12. **Add tests**: start with risk measures and factor computations (highest value).
-13. **Add configs**: extract all hardcoded parameters into YAML.
-14. **Add scripts**: create CLI entry points for common workflows.
-15. **Convert data to Parquet**: migrate from CSV/Excel to Parquet where appropriate.
+Created `src/quant/` as an installable package with:
+
+| Module | Status | Contents |
+|---|---|---|
+| `pyproject.toml` | ✅ Done | Hatchling build, all deps, pytest/ruff/mypy config |
+| `utils/constants.py` | ✅ Done | `TRADING_DAYS_PER_YEAR`, `DEFAULT_RISK_FREE_RATE`, `RISK_MEASURES`, `QUARTER_END_DATES` |
+| `utils/dates.py` | ✅ Done | `is_quarter_end()`, `last_quarter_end()`, `infer_periods_per_year()`, `get_rebalance_dates()` |
+| `utils/validation.py` | ✅ Done | `validate_returns()`, `validate_weights()`, `check_no_negative_prices()` |
+| `utils/logging.py` | ✅ Done | Structured logging config with `get_logger()` |
+| `utils/io.py` | ✅ Done | CSV/Parquet/Excel read-write helpers |
+| `data/loaders.py` | ✅ Done | `load_price_csv()`, `load_returns_from_prices()`, `load_weights_excel()` |
+| `data/cleaners.py` | ✅ Done | `find_common_start_date()`, `trim_to_common_history()`, `align_to_common_dates()`, `validate_price_data()` |
+| `data/providers/base.py` | ✅ Done | Abstract `DataProvider` interface |
+| `data/providers/yfinance.py` | ✅ Done | `YFinanceProvider` with `fetch_prices()` and `fetch_ohlcv()` |
+| `analytics/performance.py` | ✅ Done | 17 metric functions + `performance_summary()` (Sharpe, Sortino, Calmar, Omega, VaR, CVaR, beta, alpha, tracking error, IR, drawdown, skewness, kurtosis, win rate) |
+| `exceptions.py` | ✅ Done | `QuantError` → `DataError`, `OptimizationError`, `ConfigError`, `InsufficientDataError` |
+| `config.py` | ✅ Done | Path constants (`PROJECT_ROOT`, `DATA_DIR`, `OUTPUT_DIR`, etc.) + `ensure_directories()` |
+| `tests/` | ✅ Done | 106 tests across 6 test files (conftest fixtures, analytics, data, utils) |
+
+**No existing files modified.** Phase 1 was purely additive.
+
+### Phase 2 — Migrate 6 highest-duplication files to use `quant.*` ✅
+
+Replaced ~200 lines of copy-pasted metric calculations with imports from `quant.*`:
+
+| File | What changed |
+|---|---|
+| `optimization/nco.py` | 20-line inline stats block → `performance_summary()`, local `RISK_MEASURES` → constant, `rf = 0.03` → `DEFAULT_RISK_FREE_RATE`, `252` → `TRADING_DAYS_PER_YEAR` |
+| `optimization/mincorr.py` | `summary_stats()` → `annualized_return()` + `sharpe_ratio()`, `returns_from_prices()` → `load_returns_from_prices()`, removed unused `scipy.optimize` import |
+| `optimization/h.py` | Created `_compute_stats()` helper wrapping `performance_summary()`, replaced 3 duplicated stats blocks (~200 lines → ~30), removed `scipy.stats` import |
+| `strategies/trend_following/stats.py` | `scipy.stats.skew/kurtosis` → `return_skewness()`/`return_kurtosis()`, `yf.download` → `YFinanceProvider`, `252` → `TRADING_DAYS_PER_YEAR` |
+| `strategies/hedging/dynamic_hedge/dhedging.py` | Removed 3 local functions (`infer_periods_per_year`, `max_drawdown`, `summarize`) → quant imports, removed `import math` |
+| `performance/performance.py` | `is_quarter_end()` + search logic → `last_quarter_end()`, `risk_free_annual = 0.05` → `DEFAULT_RISK_FREE_RATE`, inline metrics → `sharpe_ratio()`, `beta()`, `tracking_error()`, etc. |
+
+**Net result:** 244 insertions, 460 deletions (−216 lines). All risk-free rates standardized to `DEFAULT_RISK_FREE_RATE = 0.05`.
+
+### Phase 3+ — Remaining work (not started)
+
+| # | Phase | Scope | Notes |
+|---|---|---|---|
+| 6 | **Refactor factors** | Extract momentum, value, skewness, quality, earnings factors into `Factor` ABC classes under `src/quant/factors/` | Existing code in `strategies/factor/` — needs class hierarchy |
+| 7 | **Refactor optimizers** | Unify `optimization/nco.py`, `h.py`, `mincorr.py` under `src/quant/portfolio/` with common `Optimizer` interface | Extract Riskfolio wrappers from scripts into reusable classes |
+| 8 | **Build backtesting engine** | Consolidate `simulation.py`, `trades.py`, `signals.py` into `src/quant/backtesting/` | Event-driven or vectorized backtest loop |
+| 9 | **Migrate strategies** | Wrap trend-following (`dhedging.py`) and hedging into `Strategy` ABC implementations | Keep EMA logic, add proper interface |
+| 10 | **Migrate fixed income** | Structure Argentine bonds, corporates, rates under `src/quant/fixed_income/` | `data/argentine/` has raw data; needs pricing models |
+| 11 | **Migrate Monte Carlo** | Clean up `simulation/montecarlo/` with proper distribution fitting | GBM, fat-tailed, correlated path generation |
+| 12 | **Expand tests** | Add tests for factors, optimizers, backtesting, strategies | Target >80% coverage on `src/quant/` |
+| 13 | **Add configs** | Extract hardcoded asset lists, date ranges, rf rates into YAML | `configs/universes/`, `configs/strategies/`, `configs/portfolios/` |
+| 14 | **Add scripts** | CLI entry points: `run_backtest.py`, `update_data.py`, `run_optimization.py` | Use `argparse` + YAML config loading |
+| 15 | **Convert data to Parquet** | Migrate CSV/Excel data files to Parquet where appropriate | Faster I/O, smaller files, preserves dtypes |
 
 ---
 
