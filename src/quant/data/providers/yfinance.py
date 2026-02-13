@@ -35,8 +35,12 @@ class YFinanceProvider(DataProvider):
         start: str,
         end: str | None = None,
         auto_adjust: bool = True,
+        batch_size: int = 1,
     ) -> pd.DataFrame:
         """Fetch adjusted close prices from Yahoo Finance.
+
+        Downloads one ticker at a time to avoid yfinance silent failures
+        when requesting many tickers in a single call.
 
         Parameters
         ----------
@@ -48,6 +52,8 @@ class YFinanceProvider(DataProvider):
             End date ``YYYY-MM-DD``. Defaults to today.
         auto_adjust : bool
             Adjust for splits/dividends.
+        batch_size : int
+            Number of tickers per yfinance call (default: 1).
 
         Returns
         -------
@@ -64,41 +70,64 @@ class YFinanceProvider(DataProvider):
 
         logger.info("Downloading %d tickers from %s to %s", len(tickers), start, end)
 
-        data = yf.download(
-            tickers,
-            start=start,
-            end=end,
-            auto_adjust=auto_adjust,
-            progress=self.progress,
-        )
+        all_prices: list[pd.DataFrame] = []
+        failed: list[str] = []
 
-        if data.empty:
-            raise DataError(f"No data returned for tickers: {tickers}")
+        for i in range(0, len(tickers), batch_size):
+            batch = tickers[i : i + batch_size]
+            logger.debug("Batch %d/%d: %s", i // batch_size + 1, -(-len(tickers) // batch_size), batch)
 
-        # Extract Close prices
-        if isinstance(data.columns, pd.MultiIndex):
-            prices = data["Close"]
-        else:
-            # Single ticker returns flat columns
-            prices = data[["Close"]].rename(columns={"Close": tickers[0]})
+            try:
+                data = yf.download(
+                    batch if len(batch) > 1 else batch[0],
+                    start=start,
+                    end=end,
+                    auto_adjust=auto_adjust,
+                    progress=self.progress,
+                )
 
-        # Ensure DataFrame (single ticker may return Series)
-        if isinstance(prices, pd.Series):
-            prices = prices.to_frame(name=tickers[0])
+                if data.empty:
+                    logger.warning("No data for: %s", batch)
+                    failed.extend(batch)
+                    continue
 
-        # Sort columns alphabetically, sort index by date
-        prices = prices.reindex(columns=sorted(prices.columns))
-        prices = prices.sort_index()
+                # yfinance always returns MultiIndex columns (Price, Ticker)
+                if isinstance(data.columns, pd.MultiIndex):
+                    prices = data["Close"]
+                else:
+                    prices = data[["Close"]].rename(columns={"Close": batch[0]})
+
+                # Ensure DataFrame
+                if isinstance(prices, pd.Series):
+                    prices = prices.to_frame(name=batch[0])
+
+                all_prices.append(prices)
+
+            except Exception as e:
+                logger.warning("Failed to download %s: %s", batch, e)
+                failed.extend(batch)
+
+        if not all_prices:
+            raise DataError(f"No data returned for any tickers: {tickers}")
+
+        if failed:
+            logger.warning("Failed tickers (%d): %s", len(failed), failed)
+
+        # Combine all batches
+        combined = pd.concat(all_prices, axis=1)
+        combined = combined.reindex(columns=sorted(combined.columns))
+        combined = combined.sort_index()
 
         logger.info(
-            "Downloaded %d rows x %d assets (%s to %s)",
-            len(prices),
-            len(prices.columns),
-            prices.index[0].strftime("%Y-%m-%d"),
-            prices.index[-1].strftime("%Y-%m-%d"),
+            "Downloaded %d rows x %d assets (%s to %s). %d failed.",
+            len(combined),
+            len(combined.columns),
+            combined.index[0].strftime("%Y-%m-%d"),
+            combined.index[-1].strftime("%Y-%m-%d"),
+            len(failed),
         )
 
-        return prices
+        return combined
 
     def fetch_ohlcv(
         self,

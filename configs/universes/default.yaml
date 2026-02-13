@@ -1,0 +1,431 @@
+# Default universe — all tickers used across factor strategies
+# Consolidated from strategies/factor/*/tickers.py
+#
+# Usage:
+#   python scripts/update_data.py --universe default --start 2015-01-01
+
+name: default
+description: Full CEDEAR + US + LatAm + Global universe
+
+# Argentine ADRs
+argentine_adrs:
+  - YPF
+  - GGAL
+  - BBAR
+  - SUPV
+  - PAM
+  - TGS
+  - TEO
+  - IRS
+  - CRESY
+  - LOMA
+  - BMA
+  - EDN
+  - CEPU
+  - CAAP
+  - VIST
+  - BIOX
+  - GLOB
+  - MELI
+  - ARCO
+  - DESP
+  - SATL
+  - LND
+  - AGRO
+
+# US mega-cap / large-cap
+us_large_cap:
+  - AAPL
+  - MSFT
+  - AMZN
+  - GOOGL
+  - META
+  - NVDA
+  - TSLA
+  - BRK-B
+  - JPM
+  - V
+  - UNH
+  - JNJ
+  - WMT
+  - PG
+  - MA
+  - HD
+  - ABBV
+  - KO
+  - PEP
+  - COST
+  - MRK
+  - LLY
+  - AVGO
+  - CRM
+  - MCD
+  - CSCO
+  - ACN
+  - ABT
+  - TMO
+  - DHR
+  - TXN
+  - ADBE
+  - ORCL
+  - NFLX
+  - INTC
+  - AMD
+  - QCOM
+  - IBM
+  - GE
+  - CAT
+  - HON
+  - MMM
+  - RTX
+  - LMT
+  - BA
+  - UNP
+  - ISRG
+  - GILD
+  - AMGN
+  - BMY
+  - PFE
+  - MRNA
+  - PANW
+  - NOW
+  - CL
+  - KMB
+  - MDLZ
+  - MO
+  - PM
+  - AXP
+  - C
+  - GS
+  - WFC
+  - BK
+  - SCHW
+  - AIG
+  - MMC
+  - SPGI
+  - BX
+  - ADP
+  - SAP
+  - SPOT
+  - UBER
+  - ABNB
+  - PLTR
+  - ARM
+  - SHOP
+  - BKNG
+  - DE
+  - F
+  - GM
+  - STLA
+  - VZ
+  - T
+  - TMUS
+  - XOM
+  - CVX
+  - OXY
+  - SLB
+  - HAL
+  - CDE
+  - NEM
+  - FCX
+  - SCCO
+  - DOW
+  - LRCX
+  - AMAT
+  - MRVL
+  - CEG
+  - VST
+  - PSX
+  - EQNR
+  - BP
+  - SHEL
+
+# US mid-cap / growth / tech
+us_mid_growth:
+  - COIN
+  - MSTR
+  - RBLX
+  - SNOW
+  - ROKU
+  - SNAP
+  - PINS
+  - ETSY
+  - DOCU
+  - TEAM
+  - PATH
+  - TWLO
+  - UPST
+  - OKLO
+  - RGTI
+  - AI
+  - TEM
+  - CRWV
+  - CLS
+  - ALAB
+  - DECK
+  - HWM
+  - FSLR
+  - ANF
+  - ROST
+  - ORLY
+  - PCAR
+  - GRMN
+  - MSI
+  - GLW
+  - SNA
+  - NUE
+  - HOG
+  - TGT
+  - SBUX
+  - HPQ
+  - VRTX
+  - BIIB
+  - HOOD
+  - RACE
+  - EA
+  - EFX
+  - ADI
+  - SWKS
+  - SYY
+  - CAH
+  - CVS
+  - MDT
+  - GSK
+  - AZN
+  - NVS
+  - YELP
+  - TRIP
+  - URBN
+  - CAR
+  - CCL
+  - DAL
+  - UAL
+  - AAL
+  - AAP
+  - LVS
+  - GT
+  - WBA
+  - PBI
+  - VRSN
+  - ECL
+  - AVY
+  - IP
+  - JCI
+  - DD
+  - FDX
+  - UL
+  - DEO
+  - HSY
+  - BAC
+
+# Crypto-related
+crypto_adjacent:
+  - IBIT
+  - ETHA
+  - RIOT
+  - BITF
+  - HUT
+  - IREN
+
+# Commodities / miners
+miners_commodities:
+  - GLD
+  - SLV
+  - USO
+  - COPX
+  - URA
+  - GDX
+  - PAAS
+  - AEM
+  - KGC
+  - HL
+  - GFI
+  - HMY
+  - MUX
+  - NXE
+  - MOS
+  - GGB
+  - SID
+  - RIO
+  - BHP
+  - LAC
+  - AUY
+
+# ETFs & index
+etfs:
+  - SPY
+  - QQQ
+  - DIA
+  - IWM
+  - IVV
+  - IVE
+  - IVW
+  - VEA
+  - EEM
+  - EWZ
+  - EWJ
+  - EFA
+  - FXI
+  - ILF
+  - IEUR
+  - ACWI
+  - IEMG
+  - IJH
+  - SMH
+  - XLE
+  - XLF
+  - XLV
+  - XLK
+  - XLI
+  - XLB
+  - XLU
+  - XLP
+  - XLY
+  - XLC
+  - XLRE
+  - IBB
+  - ARKK
+  - ESGU
+  - VIG
+  - CIBR
+  - TQQQ
+  - SPXL
+  - SH
+  - PSQ
+  - ITA
+
+# Leveraged / inverse (use with caution)
+leveraged:
+  - VXX
+
+# LatAm (non-Argentine)
+latam:
+  - NU
+  - STNE
+  - XP
+  - PAGS
+  - PBR
+  - VALE
+  - BBD
+  - ITUB
+  - BSBR
+  - SBS
+  - CX
+  - ERJ
+  - FMX
+  - AMX
+  - PAC
+  - ASR
+  - TIMB
+  - TV
+  - EBR
+  - ELP
+  - ABEV
+  - SAN
+  - BRFS
+  - VIV
+  - NTCO
+  - SDA
+  - UGP
+  - ING
+  - LND
+  - GPRK
+  - ADGO
+  - LAR
+  - TXR
+  - BAK
+  - NG
+
+# Brazilian tickers (B3 exchange — yfinance needs .SA suffix)
+brazilian_b3:
+  - PETR3.SA
+  - BBAS3.SA
+  - VALE3.SA
+  - ITUB3.SA
+  - ABEV3.SA
+  - SUZB3.SA
+  - CSNA3.SA
+  - LREN3.SA
+  - MGLU3.SA
+  - HAPV3.SA
+  - WEGE3.SA
+  - PRIO3.SA
+  - RENT3.SA
+  - SBSP3.SA
+  - VIVT3.SA
+  - TIMS3.SA
+  - BBDC3.SA
+  - NTCO3.SA
+  - JBSS3.SA
+
+# Asian
+asian:
+  - BABA
+  - JD
+  - BIDU
+  - PDD
+  - XPEV
+  - NIO
+  - TCOM
+  - NTES
+  - JOYY
+  - TSM
+  - SONY
+  - TM
+  - HMC
+  - HDB
+  - IBN
+  - INFY
+  - KB
+  - KEP
+  - MUFG
+  - NMR
+  - SE
+  - ASML
+  - ERIC
+  - LYG
+  - BCS
+  - NGG
+  - PHG
+  - VOD
+  - TTM
+  - LFC
+  - SNP
+
+# European
+european:
+  - TTE
+  - NOKA
+  - AEG
+  - PSO
+  - E
+  - MFG
+  - ADS
+  - BBV
+  - BNG
+  - KOFM
+  - B
+  - WBO
+  - BB
+  - EBAY
+  - PKS
+  - TRVV
+  - TX
+  - X
+  - DIS
+  - XRX
+  - FNMA
+  - FMCC
+  - HSBC
+  - SPCE
+  - ZM
+  - KOD
+  - WB
+  - YZCAY
+
+# Note: The following tickers from the original lists may not work on yfinance
+# and are excluded from the default download:
+#   BA.C (CEDEAR notation), BRKB (use BRK-B), DISN (use DIS), XROX (use XRX),
+#   RCTB4.BA, NEC1.HM, NSAN, NLM, SMSN, SHPW, SIEGY, OGZD, LKOD, ATAD,
+#   HNPIY, IWDA, PCRF, HHPD, CBRD, AABA, AOCA, MBG, MBT, BPA11,
+#   BAS, BAYN, EOAN, BSN, DTEA, CS, MBG, NEC1, RCTB4, TIIAY, TEFO, AKO-B

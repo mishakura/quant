@@ -550,29 +550,54 @@ Replaced ~200 lines of copy-pasted metric calculations with imports from `quant.
 
 **Net result:** 244 insertions, 460 deletions (−216 lines). All risk-free rates standardized to `DEFAULT_RISK_FREE_RATE = 0.05`.
 
-### Phase 3+ — Remaining work (not started)
+### Phase 3 — Factor library ✅ (Step 6)
+
+Created `src/quant/factors/` with 4 factor implementations + ABC + registry:
+
+| Module | Status | Contents |
+|---|---|---|
+| `factors/base.py` | ✅ Done | `Factor` ABC with `compute()` + `validate_data()`, `rank_scores()` helper |
+| `factors/momentum.py` | ✅ Done | `MomentumFactor` — 12M return + FIP filter (registered as `momentum_12m`) |
+| `factors/skewness.py` | ✅ Done | `SkewnessFactor` — 252D rolling skewness (registered as `skewness_252d`) |
+| `factors/low_volatility.py` | ✅ Done | `LowVolatilityFactor` — annualised vol ranking (registered as `low_volatility`) |
+| `factors/sector_rotation.py` | ✅ Done | `SectorMomentumFactor` — 11M SPDR ETF rotation (registered as `sector_momentum_11m`) |
+| `factors/registry.py` | ✅ Done | `register_factor()` decorator, `get_factor()`, `list_factors()` |
+| `data/universe.py` | ✅ Done | `Universe` class, `filter_by_exchange()`, `filter_by_market_cap()` |
+| `tests/test_factors/` | ✅ Done | 47 tests across 6 test files |
+
+**Important:** All factors expect **prices** (not returns) as input. They compute returns internally via `pct_change()`.
+
+Deferred factors: QV (needs fundamental data), CAR3 (event-driven), ATR (technical indicator), SUE/NOA (incomplete source).
+
+### Phase 4 — Data caching layer + CLI scripts ✅
+
+Added local Parquet price store and CLI scripts:
+
+| Module | Status | Contents |
+|---|---|---|
+| `data/store.py` | ✅ Done | `PriceStore` — wraps `DataProvider` with Parquet cache (`data/raw/prices.parquet`). Downloads only missing tickers/dates. |
+| `data/loaders.py` | ✅ Updated | Added `load_prices()` — reads from Parquet cache with ticker/date filtering |
+| `data/providers/yfinance.py` | ✅ Updated | `fetch_prices()` now downloads ticker-by-ticker (batch_size=1) to avoid yfinance silent failures |
+| `data/__init__.py` | ✅ Updated | Re-exports `PriceStore`, `load_prices` |
+| `scripts/update_data.py` | ✅ Done | CLI: `--universe` (loads from YAML), `--tickers`, `--start` |
+| `scripts/run_factor.py` | ✅ Done | CLI: run any registered factor on cached data, display ranking |
+| `configs/universes/default.yaml` | ✅ Done | ~370 tickers consolidated from `strategies/factor/*/tickers.py`, organized by category |
+| `tests/test_data/test_store.py` | ✅ Done | 11 tests for PriceStore + load_prices |
+
+**Usage:**
+```bash
+python scripts/update_data.py --universe default --start 2015-01-01  # download
+python scripts/update_data.py                                         # refresh
+python scripts/run_factor.py momentum_12m --all                       # run factor
+python scripts/run_factor.py --list                                   # list factors
+```
+
+**Test count:** 164 tests passing (106 Phase 1 + 47 Phase 3 + 11 Phase 4).
+
+### Remaining work
 
 Follow these steps in order. Each phase should be done on the `refactor/professional-structure` branch.
 Always run `python -m pytest tests/ -v` after each phase to confirm nothing breaks.
-
-#### Step 6: Refactor factors → `src/quant/factors/`
-
-**Source files:** `strategies/factor/momentum/momentum.py`, `strategies/factor/skew/skew.py`, `strategies/factor/value/value.py`, and any other factor scripts under `strategies/factor/`.
-
-**What to do:**
-1. Read all existing factor scripts to understand their computation logic.
-2. Create `src/quant/factors/base.py` with an abstract `Factor` ABC:
-   - `__init__(self, name, lookback, universe)` constructor
-   - `compute(self, data: pd.DataFrame) -> pd.Series` abstract method (returns factor scores per asset)
-   - `validate_data(self, data: pd.DataFrame) -> bool` abstract method
-3. Create one module per factor under `src/quant/factors/`:
-   - `momentum.py` — cross-sectional & time-series momentum (lookback, skip recent month, etc.)
-   - `value.py` — F-Score, EBIT/EV, FCF/Assets (if fundamental data available)
-   - `skewness.py` — return skewness factor
-   - `quality.py`, `earnings.py`, `sector_rotation.py` — as code exists for them
-4. Create `src/quant/factors/registry.py` — dict-based registry so factors can be referenced by name from YAML configs.
-5. Update the original scripts under `strategies/factor/` to import from `quant.factors.*` (same pattern as Phase 2).
-6. Add tests in `tests/test_factors/`.
 
 #### Step 7: Refactor optimizers → `src/quant/portfolio/`
 
@@ -712,7 +737,7 @@ Always run `python -m pytest tests/ -v` after each phase to confirm nothing brea
 pip install -e ".[dev,notebooks]"
 
 # Run tests
-pytest
+python -m pytest tests/ -v
 
 # Run tests with coverage
 pytest --cov=quant --cov-report=html
@@ -724,8 +749,16 @@ ruff format src/ tests/
 # Type check
 mypy src/quant/
 
-# Run a specific script
+# Download / refresh market data
+python scripts/update_data.py --universe default --start 2015-01-01
+python scripts/update_data.py                          # refresh all cached
+
+# Run factor rankings
+python scripts/run_factor.py momentum_12m --all
+python scripts/run_factor.py low_volatility --top 30
+python scripts/run_factor.py --list
+
+# Run a specific script (future)
 python scripts/run_backtest.py --config configs/strategies/momentum.yaml
-python scripts/update_data.py --universe sp500
 python scripts/run_optimization.py --config configs/portfolios/hrp.yaml
 ```

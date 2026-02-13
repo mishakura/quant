@@ -96,6 +96,68 @@ def load_returns_from_prices(
     return returns
 
 
+def load_prices(
+    tickers: list[str] | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    cache_path: str | Path | None = None,
+) -> pd.DataFrame:
+    """Load cached close prices from the local Parquet store.
+
+    Parameters
+    ----------
+    tickers : list[str] or None
+        Ticker symbols to load. If None, loads all cached tickers.
+    start : str or None
+        Start date ``YYYY-MM-DD``. If None, loads from the earliest date.
+    end : str or None
+        End date ``YYYY-MM-DD``. If None, loads to the latest date.
+    cache_path : str, Path, or None
+        Override path to the Parquet cache file. Defaults to
+        ``data/raw/prices.parquet``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Close prices with DatetimeIndex and ticker columns.
+
+    Raises
+    ------
+    DataError
+        If the cache file does not exist.
+    """
+    from quant.config import RAW_DATA_DIR
+
+    if cache_path is None:
+        cache_path = RAW_DATA_DIR / "prices.parquet"
+    cache_path = Path(cache_path)
+
+    if not cache_path.exists():
+        raise DataError(
+            f"No cached price data found at {cache_path}. "
+            "Run 'python scripts/update_data.py --tickers ...' to download data first."
+        )
+
+    df = pd.read_parquet(cache_path)
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+
+    if tickers is not None:
+        missing = [t for t in tickers if t not in df.columns]
+        if missing:
+            logger.warning("Tickers not in cache: %s", missing)
+        available = [t for t in tickers if t in df.columns]
+        df = df[available]
+
+    if start is not None:
+        df = df.loc[pd.Timestamp(start):]
+    if end is not None:
+        df = df.loc[:pd.Timestamp(end)]
+
+    logger.info("Loaded %d rows x %d tickers from cache", len(df), len(df.columns))
+    return df
+
+
 def load_weights_excel(
     path: str | Path,
     sheet_name: str | int = 0,
