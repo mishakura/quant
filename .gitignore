@@ -1,4 +1,51 @@
-# Ignore specific folders inside trend
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Testing & type checking
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Data (raw & processed — too large for git)
+data/raw/
+data/processed/
+data/cache/
+
+# Output (generated files)
+output/
+
+# Excel files (except samples tracked in git)
+# *.xlsx
+
+# Environment variables
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Legacy ignores (trend_following working data)
 trend/indicators/
 trend/trades/
 trend/data/
