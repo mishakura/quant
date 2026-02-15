@@ -7,16 +7,16 @@ import pytest
 
 @pytest.fixture
 def sample_factor_prices() -> pd.DataFrame:
-    """Price data for 20 assets over 300 business days.
+    """Price data for 20 assets over 800 business days.
 
     Assets have different drift and volatility so that factor rankings
     produce meaningful variation.
     """
     rng = np.random.default_rng(42)
     n_assets = 20
-    n_days = 300
+    n_days = 800
 
-    dates = pd.bdate_range("2023-01-02", periods=n_days, freq="B")
+    dates = pd.bdate_range("2021-01-02", periods=n_days, freq="B")
     tickers = [f"ASSET_{i:02d}" for i in range(n_assets)]
 
     daily_returns = np.column_stack([

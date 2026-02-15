@@ -29,12 +29,12 @@ class TestLowVolatilityFactor:
     def test_lower_vol_higher_rank(self) -> None:
         """Asset with lower volatility gets a higher rank."""
         rng = np.random.default_rng(7)
-        dates = pd.bdate_range("2023-01-02", periods=260, freq="B")
+        dates = pd.bdate_range("2021-01-02", periods=800, freq="B")
 
         # LOW_VOL: low sigma → should rank higher
-        low_vol = 100.0 * np.cumprod(1 + rng.normal(0.0003, 0.005, 260))
+        low_vol = 100.0 * np.cumprod(1 + rng.normal(0.0003, 0.005, 800))
         # HIGH_VOL: high sigma → should rank lower
-        high_vol = 100.0 * np.cumprod(1 + rng.normal(0.0003, 0.03, 260))
+        high_vol = 100.0 * np.cumprod(1 + rng.normal(0.0003, 0.03, 800))
 
         prices = pd.DataFrame({"LOW_VOL": low_vol, "HIGH_VOL": high_vol}, index=dates)
         factor = LowVolatilityFactor()

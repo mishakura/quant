@@ -11,6 +11,7 @@ import pandas as pd
 
 from quant.config import RAW_DATA_DIR
 from quant.data.providers.base import DataProvider
+from quant.exceptions import DataError
 from quant.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -86,8 +87,12 @@ class PriceStore:
         # Download missing tickers (full date range)
         if missing_tickers:
             logger.info("Downloading %d missing tickers: %s", len(missing_tickers), missing_tickers)
-            new_data = self.provider.fetch_prices(missing_tickers, start=start, end=end)
-            new_frames.append(new_data)
+            try:
+                new_data = self.provider.fetch_prices(missing_tickers, start=start, end=end)
+                new_frames.append(new_data)
+            except DataError:
+                logger.warning("All missing tickers failed to download — skipping.")
+
 
         # Download new dates for existing tickers
         if cached is not None and needs_date_update:
@@ -100,9 +105,12 @@ class PriceStore:
                     update_start,
                     end,
                 )
-                new_dates = self.provider.fetch_prices(existing_tickers, start=update_start, end=end)
-                if not new_dates.empty:
-                    new_frames.append(new_dates)
+                try:
+                    new_dates = self.provider.fetch_prices(existing_tickers, start=update_start, end=end)
+                    if not new_dates.empty:
+                        new_frames.append(new_dates)
+                except DataError:
+                    logger.warning("Date update failed for all tickers — skipping.")
 
         # Merge everything and save
         if new_frames:

@@ -20,12 +20,14 @@ import argparse
 import sys
 
 import pandas as pd
+import yaml
 
 # Ensure factor modules are imported so they register themselves
 import quant.factors.low_volatility  # noqa: F401
 import quant.factors.momentum  # noqa: F401
 import quant.factors.sector_rotation  # noqa: F401
 import quant.factors.skewness  # noqa: F401
+from quant.config import CONFIGS_DIR
 from quant.data.loaders import load_prices
 from quant.factors.registry import get_factor, list_factors
 from quant.utils.logging import get_logger
@@ -56,15 +58,10 @@ def main() -> None:
         help="Start date for price data (default: 2015-01-01).",
     )
     parser.add_argument(
-        "--top",
-        type=int,
-        default=20,
-        help="Number of top-ranked assets to display (default: 20).",
-    )
-    parser.add_argument(
-        "--all",
-        action="store_true",
-        help="Show full ranking instead of just top N.",
+        "--universe",
+        type=str,
+        default="default",
+        help="Universe name to filter tickers (default: 'default'). Use 'all' to skip filtering.",
     )
     args = parser.parse_args()
 
@@ -83,6 +80,24 @@ def main() -> None:
     # Load data
     print(f"Loading prices from {args.start}...")
     prices = load_prices(start=args.start)
+
+    # Filter to universe tickers
+    if args.universe != "all":
+        universe_path = CONFIGS_DIR / "universes" / f"{args.universe}.yaml"
+        if not universe_path.exists():
+            print(f"Universe '{args.universe}' not found at {universe_path}")
+            sys.exit(1)
+        with open(universe_path) as f:
+            config = yaml.safe_load(f)
+        universe_tickers: list[str] = []
+        for value in config.values():
+            if isinstance(value, list) and all(isinstance(v, str) for v in value):
+                universe_tickers.extend(value)
+        universe_set = set(universe_tickers)
+        available = [t for t in prices.columns if t in universe_set]
+        prices = prices[available]
+        print(f"  Filtered to universe '{args.universe}': {len(available)} tickers")
+
     print(f"  {prices.shape[0]} days x {prices.shape[1]} tickers\n")
 
     # Run factor (all factors expect prices, not returns)
@@ -93,13 +108,12 @@ def main() -> None:
 
     # Display
     result = result.sort_values("rank")
-    n = len(result) if args.all else min(args.top, len(result))
 
     pd.set_option("display.max_rows", None)
     print(f"\n{'=' * 60}")
-    print(f"  {args.factor} — Top {n} of {len(result)}")
+    print(f"  {args.factor} — {len(result)} tickers")
     print(f"{'=' * 60}")
-    print(result.head(n).to_string(index=False))
+    print(result.to_string(index=False))
     print(f"{'=' * 60}")
 
 

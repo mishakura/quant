@@ -27,14 +27,14 @@ class LowVolatilityFactor(Factor):
     Parameters
     ----------
     lookback : int
-        Trading days for volatility calculation (default 252).
+        Trading days for volatility calculation (default 756 ≈ 3 years).
     periods_per_year : int
         Annualisation factor (default 252).
     """
 
     def __init__(
         self,
-        lookback: int = TRADING_DAYS_PER_YEAR,
+        lookback: int = 3 * TRADING_DAYS_PER_YEAR,
         periods_per_year: int = TRADING_DAYS_PER_YEAR,
     ) -> None:
         super().__init__(name="Low_Volatility", lookback=lookback)
@@ -64,11 +64,11 @@ class LowVolatilityFactor(Factor):
         """
         self.validate_data(prices)
 
-        returns = prices.pct_change().dropna()
+        returns = prices.pct_change(fill_method=None).dropna()
 
         vols: dict[str, float] = {}
-        for ticker in prices.columns:
-            ret = returns[ticker].dropna()
+        for ticker in returns.columns:
+            ret = returns[ticker]
             if len(ret) >= self.lookback:
                 vol = annualized_volatility(
                     ret.iloc[-self.lookback :], self.periods_per_year,

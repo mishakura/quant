@@ -55,6 +55,7 @@ us_large_cap:
   - KO
   - PEP
   - COST
+  - TJX
   - MRK
   - LLY
   - AVGO
@@ -101,7 +102,7 @@ us_large_cap:
   - BK
   - SCHW
   - AIG
-  - MMC
+  - MRSH
   - SPGI
   - BX
   - ADP
@@ -234,7 +235,6 @@ miners_commodities:
   - USO
   - COPX
   - URA
-  - GDX
   - PAAS
   - AEM
   - KGC
@@ -251,52 +251,6 @@ miners_commodities:
   - LAC
   - AUY
 
-# ETFs & index
-etfs:
-  - SPY
-  - QQQ
-  - DIA
-  - IWM
-  - IVV
-  - IVE
-  - IVW
-  - VEA
-  - EEM
-  - EWZ
-  - EWJ
-  - EFA
-  - FXI
-  - ILF
-  - IEUR
-  - ACWI
-  - IEMG
-  - IJH
-  - SMH
-  - XLE
-  - XLF
-  - XLV
-  - XLK
-  - XLI
-  - XLB
-  - XLU
-  - XLP
-  - XLY
-  - XLC
-  - XLRE
-  - IBB
-  - ARKK
-  - ESGU
-  - VIG
-  - CIBR
-  - TQQQ
-  - SPXL
-  - SH
-  - PSQ
-  - ITA
-
-# Leveraged / inverse (use with caution)
-leveraged:
-  - VXX
 
 # LatAm (non-Argentine)
 latam:
@@ -395,7 +349,7 @@ asian:
 # European
 european:
   - TTE
-  - NOKA
+  - NOK
   - AEG
   - PSO
   - E
