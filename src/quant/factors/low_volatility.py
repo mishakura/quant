@@ -64,11 +64,11 @@ class LowVolatilityFactor(Factor):
         """
         self.validate_data(prices)
 
-        returns = prices.pct_change(fill_method=None).dropna()
+        returns = prices.pct_change(fill_method=None)
 
         vols: dict[str, float] = {}
         for ticker in returns.columns:
-            ret = returns[ticker]
+            ret = returns[ticker].dropna()
             if len(ret) >= self.lookback:
                 vol = annualized_volatility(
                     ret.iloc[-self.lookback :], self.periods_per_year,

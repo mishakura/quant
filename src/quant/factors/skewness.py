@@ -66,18 +66,13 @@ class SkewnessFactor(Factor):
         """
         self.validate_data(prices)
 
-        returns = prices.pct_change()
+        returns = prices.pct_change(fill_method=None)
 
-        # Rolling skewness per ticker
-        skewness_data: dict[str, pd.Series] = {}
-        for ticker in prices.columns:
-            rolling_skew = returns[ticker].rolling(
-                window=self.lookback,
-                min_periods=self.min_periods,
-            ).apply(lambda x: stats.skew(x, nan_policy="omit"), raw=True)
-            skewness_data[ticker] = rolling_skew
-
-        skewness_df = pd.DataFrame(skewness_data, index=prices.index)
+        # Vectorized rolling skewness across all tickers at once
+        skewness_df = returns.rolling(
+            window=self.lookback,
+            min_periods=self.min_periods,
+        ).skew()
 
         # Last available row with any valid data
         valid_rows = skewness_df.dropna(how="all")

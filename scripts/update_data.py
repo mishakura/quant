@@ -86,6 +86,11 @@ def main() -> None:
         help="Start date YYYY-MM-DD for new ticker downloads. "
         "Defaults to the earliest date in the existing cache, or 2000-01-01.",
     )
+    parser.add_argument(
+        "--fundamentals",
+        action="store_true",
+        help="Also download fundamental data (financial statements) for all cached tickers.",
+    )
     args = parser.parse_args()
 
     ensure_directories()
@@ -113,6 +118,27 @@ def main() -> None:
     if not result.empty:
         print(f"  Date range: {result.index[0].date()} to {result.index[-1].date()}")
     print(f"  Cache file: {store.cache_path}")
+
+    # Fetch and cache ticker metadata (market cap, quote type, sector, etc.)
+    cached_tickers = store.list_cached()
+    if cached_tickers:
+        print(f"\nFetching ticker info for {len(cached_tickers)} tickers...")
+        info = store.update_ticker_info(cached_tickers)
+        n_etfs = (info["quote_type"].str.lower() == "etf").sum()
+        n_with_cap = info["market_cap"].notna().sum()
+        print(f"  Ticker info cached: {len(info)} tickers ({n_etfs} ETFs, {n_with_cap} with market cap)")
+        print(f"  Info file: {store.cache_dir / 'ticker_info.parquet'}")
+
+    # Download fundamental data if requested
+    if args.fundamentals and cached_tickers:
+        from quant.data.fundamentals import FundamentalStore
+
+        print(f"\nDownloading fundamental data for {len(cached_tickers)} tickers...")
+        fund_store = FundamentalStore()
+        fund_data = fund_store.update(cached_tickers)
+        for name, df in fund_data.items():
+            n = df.index.get_level_values(0).nunique() if not df.empty else 0
+            print(f"  {name}: {n} tickers cached")
 
 
 if __name__ == "__main__":

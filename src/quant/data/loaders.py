@@ -158,6 +158,102 @@ def load_prices(
     return df
 
 
+def load_ticker_info(
+    cache_path: str | Path | None = None,
+) -> pd.DataFrame:
+    """Load cached ticker info (market cap, quote type, sector, etc.).
+
+    Parameters
+    ----------
+    cache_path : str, Path, or None
+        Override path to the Parquet cache file. Defaults to
+        ``data/raw/ticker_info.parquet``.
+
+    Returns
+    -------
+    pd.DataFrame
+        Ticker info indexed by ticker symbol with columns:
+        market_cap, quote_type, short_name, sector, industry.
+
+    Raises
+    ------
+    DataError
+        If the cache file does not exist.
+    """
+    from quant.config import RAW_DATA_DIR
+
+    if cache_path is None:
+        cache_path = RAW_DATA_DIR / "ticker_info.parquet"
+    cache_path = Path(cache_path)
+
+    if not cache_path.exists():
+        raise DataError(
+            f"No cached ticker info found at {cache_path}. "
+            "Run 'python scripts/update_data.py --universe default --start 2015-01-01' to download data first."
+        )
+
+    df = pd.read_parquet(cache_path)
+    logger.info("Loaded ticker info for %d tickers from cache", len(df))
+    return df
+
+
+def load_fundamentals(
+    tickers: list[str] | None = None,
+    statements: list[str] | None = None,
+    cache_dir: str | Path | None = None,
+) -> dict[str, pd.DataFrame]:
+    """Load cached fundamental data from the local Parquet store.
+
+    Parameters
+    ----------
+    tickers : list[str] or None
+        Ticker symbols to load. If None, loads all cached tickers.
+    statements : list[str] or None
+        Which statements to load (e.g. ``['income', 'balance']``).
+        If None, loads all four: income, balance, cashflow, income_ttm.
+    cache_dir : str, Path, or None
+        Override directory containing the fundamental Parquet files.
+        Defaults to ``data/raw/``.
+
+    Returns
+    -------
+    dict[str, pd.DataFrame]
+        Mapping of statement name to DataFrame with MultiIndex
+        ``(ticker, field)`` rows and period-end date columns.
+
+    Raises
+    ------
+    DataError
+        If no fundamental cache files exist.
+    """
+    from quant.config import RAW_DATA_DIR
+
+    if cache_dir is None:
+        cache_dir = RAW_DATA_DIR
+    cache_dir = Path(cache_dir)
+
+    # Check that at least one cache file exists
+    from quant.data.fundamentals import _STATEMENT_FILES
+
+    any_exists = any((cache_dir / f).exists() for f in _STATEMENT_FILES.values())
+    if not any_exists:
+        raise DataError(
+            f"No cached fundamental data found in {cache_dir}. "
+            "Run 'python scripts/update_data.py --fundamentals' to download data first."
+        )
+
+    from quant.data.fundamentals import FundamentalStore
+
+    store = FundamentalStore(cache_dir=cache_dir)
+    result = store.load(tickers=tickers, statements=statements)
+    total_tickers = max(
+        (df.index.get_level_values(0).nunique() for df in result.values() if not df.empty),
+        default=0,
+    )
+    logger.info("Loaded fundamentals for %d tickers from cache", total_tickers)
+    return result
+
+
 def load_weights_excel(
     path: str | Path,
     sheet_name: str | int = 0,

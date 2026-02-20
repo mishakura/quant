@@ -2,12 +2,15 @@
 
 Wraps a DataProvider to cache prices as a single Parquet file. Subsequent
 calls read from the cache and only download missing tickers or new dates.
+Also caches ticker metadata (market cap, quote type) alongside prices.
 """
 
 import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import yfinance as yf
 
 from quant.config import RAW_DATA_DIR
 from quant.data.providers.base import DataProvider
@@ -17,6 +20,7 @@ from quant.utils.logging import get_logger
 logger = get_logger(__name__)
 
 _DEFAULT_CACHE_FILE = "prices.parquet"
+_TICKER_INFO_FILE = "ticker_info.parquet"
 
 
 class PriceStore:
@@ -161,6 +165,82 @@ class PriceStore:
 
         effective_start = start if start is not None else cache_start
         return self.get_prices(tickers, start=effective_start, end=today)
+
+    def update_ticker_info(
+        self,
+        tickers: list[str] | None = None,
+    ) -> pd.DataFrame:
+        """Fetch and cache ticker metadata (market cap, quote type, etc.).
+
+        Parameters
+        ----------
+        tickers : list[str] or None
+            Tickers to fetch info for. If None, uses all cached price tickers.
+
+        Returns
+        -------
+        pd.DataFrame
+            Ticker info with columns: market_cap, quote_type, short_name.
+        """
+        if tickers is None:
+            tickers = self.list_cached()
+
+        if not tickers:
+            logger.warning("No tickers to fetch info for.")
+            return pd.DataFrame()
+
+        info_path = self.cache_dir / _TICKER_INFO_FILE
+        logger.info("Fetching ticker info for %d tickers...", len(tickers))
+
+        records: list[dict[str, object]] = []
+        failed: list[str] = []
+        for ticker in tickers:
+            try:
+                info = yf.Ticker(ticker).info
+                records.append({
+                    "ticker": ticker,
+                    "market_cap": info.get("marketCap", np.nan),
+                    "enterprise_value": info.get("enterpriseValue", np.nan),
+                    "quote_type": info.get("quoteType", "unknown"),
+                    "short_name": info.get("shortName", ""),
+                    "sector": info.get("sector", ""),
+                    "industry": info.get("industry", ""),
+                    "financial_currency": info.get("financialCurrency", ""),
+                })
+            except Exception:
+                failed.append(ticker)
+                records.append({
+                    "ticker": ticker,
+                    "market_cap": np.nan,
+                    "enterprise_value": np.nan,
+                    "quote_type": "unknown",
+                    "short_name": "",
+                    "sector": "",
+                    "industry": "",
+                    "financial_currency": "",
+                })
+
+        if failed:
+            logger.warning("Failed to fetch info for %d tickers: %s", len(failed), failed)
+
+        df = pd.DataFrame(records).set_index("ticker")
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(info_path, engine="pyarrow")
+        logger.info("Ticker info saved: %d tickers → %s", len(df), info_path)
+        return df
+
+    def load_ticker_info(self) -> pd.DataFrame | None:
+        """Load cached ticker info from disk.
+
+        Returns
+        -------
+        pd.DataFrame or None
+            Ticker info indexed by ticker, or None if no cache exists.
+        """
+        info_path = self.cache_dir / _TICKER_INFO_FILE
+        if not info_path.exists():
+            return None
+        return pd.read_parquet(info_path)
 
     def list_cached(self) -> list[str]:
         """Return list of ticker symbols currently in the cache.
